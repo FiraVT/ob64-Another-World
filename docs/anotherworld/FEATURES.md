@@ -9,6 +9,48 @@ Each option named below is in the Esc menu, which also lists its default.
 "Not played" means the feature is built and compiles, and nobody has tested it
 in a game yet.
 
+## Modding
+
+- **Content database.** The game's classes, attacks, items, consumables and
+  battle rewards are loaded from the ROM into the port's own database. JSON
+  content packs in `content/` (the project's) and `user-content/` (the
+  player's) change them by record, field and name, and reload while the game
+  runs; the database writes the changed bytes into the game's tables. The class
+  rebalance below is such a pack. `content-dump/` in the settings folder holds
+  every original record with its name and fields, for reference.
+  `content_db.cpp`, `docs/anotherworld/design-content-database.md`.
+- **New classes** (not played). A pack makes a class with a key and the class
+  it starts as (`copy_of`); the port gives it an id from 172 and keeps it with
+  the saves. It is a special class, like Dio's: a script puts a character in
+  it, and Change Class does not offer it yet. `docs/anotherworld/design-new-classes.md`.
+- **Lua scripts.** `.lua` files in `content/` and `user-content/` react to game
+  events, change content records and replace granted items, in a sandbox, and
+  reload while the game runs. `lua_runtime.cpp`, `docs/anotherworld/design-lua.md`.
+- **Mod folders.** A folder with a `mod.json` (id, name, version, priority,
+  requirements, enabled) groups a mod's packs and scripts and gives it a place
+  in the load order. `content_files.cpp`, `docs/anotherworld/design-mods.md`.
+- **MODS tab** (not played). One table of the player's mods, packs and scripts
+  in `user-content/`, in load order: a switch, the name and description,
+  the status (loaded, off, pending, refused, conflicts, errors), up/down and
+  drag to reorder, details, and delete. The choices are kept in
+  `mod-settings.json`. `docs/anotherworld/design-mods.md` section 5.
+- **Mod safety.** Packs and scripts cannot reach files, programs or other code
+  on the computer; scripts have memory and time limits. Two tests check this on
+  every build. `docs/anotherworld/security.md`.
+- **LordlyCaliber import.** A LordlyCaliber project folder copied into
+  `user-content/` applies its class, item and consumable edits, and the log
+  lists the sections not applied yet.
+  `docs/anotherworld/design-lordlycaliber-import.md`.
+- **ROM patches.** Every `.ips` file in `patches/` is applied to the ROM at
+  start, so a text fix or fan translation reaches the port. `rom_patch.cpp`.
+- **Asset replacement.** HD texture and font packs and replacement songs; see
+  Graphics and audio below.
+- **Example mods.** The package carries `content/examples/`: `balance-tweak`,
+  `loot-tweaks`, `example-mod` with `example-mod-addon`, and `new-class` with
+  the scripts that give and recruit it. It ships no code mods (`DECISIONS.md`,
+  2026-11-01); `mods/item-grant-log` and `mods/small-large-units` stay in the
+  source tree.
+
 ## The war: enemy army
 
 - **War Director** (GAMEPLAY → WAR DIRECTOR, on by default). The enemy earns
@@ -128,52 +170,20 @@ in a game yet.
   in addition to the game's own three records. `save_profiles.cpp`.
 - **Screenshots** (Print Screen or F12, Windows). PNGs in `screenshots/`.
   `screenshot.cpp`.
-- **ROM patches.** Every `.ips` file in `patches/` is applied to the ROM at
-  start, so a text fix or fan translation reaches the port. `rom_patch.cpp`.
 - **US revision 0 (in progress).** The app runs only the USA Rev A cartridge
   (revision 1); `app/src/game.hpp` checks its hash. `make rev0` recompiles the
   first USA release (revision 0) for development, and no app build runs it
   yet. `docs/anotherworld/notes-revisions.md` §5.
 
-## Platforms, modding and packaging
+## Platforms and packaging
 
 - **Release package.** The OB64: Another World name, GPL-3.0-or-later license,
   credits, a `roms` folder for the player's ROM, and `make dist-zip`. No game
   data ships.
 - **Android and on-device Linux builds.** `android/`,
   `tools/build-on-device.sh`.
-- **Content database.** The game's classes, attacks, items, consumables and
-  battle rewards are loaded from the ROM into the port's own database. JSON content packs in
-  `content/` (the project's) and `user-content/` (the player's) change them by
-  record, field and name, and reload while the game runs; the database writes the
-  changed bytes into the game's tables. A LordlyCaliber project folder
-  copied into `user-content/` applies its class, item and consumable edits,
-  and the log lists the sections not applied yet. `content-dump/` in the
-  settings folder holds every original record with its name and fields, for
-  reference.
-  `content_db.cpp`, `docs/anotherworld/design-content-database.md`.
-- **New classes** (not played). A pack makes a class with a key and the class
-  it starts as (`copy_of`); the port gives it an id from 172 and keeps it with
-  the saves. It is a special class, like Dio's: a script puts a character in
-  it, and Change Class does not offer it yet. `docs/anotherworld/design-new-classes.md`.
-- **Lua scripts.** `.lua` files in `content/` and `user-content/` react to game
-  events, change content records and replace granted items, in a sandbox, and
-  reload while the game runs. `lua_runtime.cpp`, `docs/anotherworld/design-lua.md`.
-- **Mod folders.** A folder with a `mod.json` (id, name, version, priority,
-  requirements, enabled) groups a mod's packs and scripts and gives it a place
-  in the load order. `content_files.cpp`, `docs/anotherworld/design-mods.md`.
-- **MODS tab** (not played). One table of the player's mods, packs and scripts
-  in `user-content/`, in load order: a switch, the name and description,
-  the status (loaded, off, pending, refused, conflicts, errors), up/down and
-  drag to reorder, details, and delete. The choices are kept in
-  `mod-settings.json`. `docs/anotherworld/design-mods.md` section 5.
-- **Mod safety.** Packs and scripts cannot reach files, programs or other code
-  on the computer; scripts have memory and time limits. Two tests check this on
-  every build. `docs/anotherworld/security.md`.
 - **Hook table and game events.** Features hook the game through
   `config/hooks.toml` and an event table that mods will share, and reach the
   base only through `app/features/game_host.hpp`, so they can move to another
   base later. `docs/anotherworld/separation.md`.
-- **Example mods.** `item-grant-log` and `small-large-units` ship in the
-  package.
 

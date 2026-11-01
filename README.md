@@ -2,28 +2,80 @@
 
 OB64: Another World runs the Nintendo 64 game *Ogre Battle 64: Person of
 Lordly Caliber* as a native program on Windows, Linux and macOS, and changes
-the game: the enemy builds and deploys new units during a mission, the classes are rebalanced, the mission
-field takes mouse orders, and several menus are new.
+the game: the enemy builds and deploys new units during a mission, the classes
+and battle rules are rebalanced, the mission field takes mouse orders, several
+menus are new, and the game's data and rules can be changed by mods made of data
+files and Lua scripts.
 
 **This repository and its releases contain no game data.** You need your own
 dump of the USA Rev A cartridge (see [Play it](#play-it)).
 
 ## What changes in the game
 
-- **A stronger enemy.** The War Director earns money from the towns the enemy
-  holds and spends it on new units during a mission. An enemy commander gives
-  those units jobs: retake towns, raid your headquarters, hunt stragglers.
-- **Class rebalance.** The weak unit families are raised, and a mod can add a
-  new class from a data file.
-- **Field controls.** Select and order units with the mouse, with an army
-  strip and alerts on screen.
+- **A stronger enemy army.** The War Director earns money from the towns the
+  enemy holds and spends it on new units during a mission. An enemy commander
+  gives those units jobs: retake towns, raid your headquarters, hunt
+  stragglers. DIFFICULTY sets how hard it plays, from EASY to VETERAN. Generic
+  enemy units can carry stronger weapons and stand in formations that suit
+  their classes. Enemy groups promote to the next class of their line as the
+  war goes on, and enemy units, bosses included, can field extra members.
+- **Class and battle rules.** The weak unit families are raised: Faerie heals,
+  Gremlin debuffs, Ogre becomes a size-2 bruiser, and the undead get a real
+  class ladder. Options share a battle's experience across the whole unit, let
+  large classes take one square so they can stand side by side, and let class
+  changes ignore alignment.
+- **Field command.** Select and order units with the mouse, with an army strip
+  and alerts on screen. An auto commander (F4) can command the units you send
+  out.
 - **New screens.** An Organize screen (F3), a roster, a button legend (F1) and
   an Esc menu with every setting.
-- **Convenience.** Battle and field speed, auto-play dialogue, save backups and
-  profiles, song replacement, HD texture packs and mods.
+- **Pace and display.** Battle speed apart from field speed, the mission field
+  drawn at the monitor's refresh rate, auto-play dialogue (F2) and turbo A.
+- **Saves.** Timestamped backups, saves kept per leader name, and save import
+  from `save-import/` or a Controller Pak file.
 
-The options are in the Esc menu. The full list is
-[docs/anotherworld/FEATURES.md](docs/anotherworld/FEATURES.md).
+The options are in the Esc menu. Some features are built and not yet tested in
+play; [docs/anotherworld/FEATURES.md](docs/anotherworld/FEATURES.md) marks them
+and has the full list.
+
+## Modding
+
+Mods change the game's data and rules without changing its code. A mod is a
+folder of data files and Lua scripts in `user-content/`, and the port loads it
+at start and reloads it while the game runs. The project's own class rebalance
+is built this way: it is the content pack `content/class-rebalance.json`.
+
+- **Content packs.** JSON files change the game's classes, attacks, items,
+  consumables and battle rewards by record, field and name. The port reads
+  those tables from the ROM into its own database and writes the changes back
+  into the game. `content-dump/` lists every original record for reference.
+  [design-content-database.md](docs/anotherworld/design-content-database.md)
+- **New classes.** A pack can add a class based on an existing one. The port
+  gives it a new id and keeps it with the saves.
+  [design-new-classes.md](docs/anotherworld/design-new-classes.md)
+- **Lua scripts.** Scripts react to game events (a mission loading, the field
+  updating, an item being granted), read and change content records, replace
+  granted items, change a character's class and recruit new characters.
+  [design-lua.md](docs/anotherworld/design-lua.md)
+- **Mod folders and the MODS tab.** A `mod.json` gives a mod its id, version,
+  load-order priority and the mods it requires. The MODS tab turns mods on and
+  off, reorders them, and shows conflicts and errors.
+  [design-mods.md](docs/anotherworld/design-mods.md)
+- **Safety.** Packs and scripts cannot reach files, programs or other code on
+  the computer, and scripts run with memory and time limits. Two tests check
+  this on every build. [security.md](docs/anotherworld/security.md)
+- **LordlyCaliber projects.** A project made in rempred's editor, copied into
+  `user-content/`, applies its class, item and consumable edits.
+  [design-lordlycaliber-import.md](docs/anotherworld/design-lordlycaliber-import.md)
+- **Assets and patches.** HD texture and font packs, HD backdrops
+  ([hd-backgrounds.md](docs/guides/hd-backgrounds.md)), replacement songs
+  (`music/<n>.wav`), and `.ips` ROM patches such as text fixes and fan
+  translations.
+
+The package carries worked examples in `content/examples/`: a balance tweak, a
+loot script, a mod with an add-on, and a new class with a script that recruits
+it. Mods that other people share are listed at
+<https://github.com/topics/ob64-mod>.
 
 ## How the project is put together
 
@@ -74,9 +126,6 @@ The app checks the ROM by hash and starts the game. Without a usable ROM it
 opens the start screen, where the ROM row on the **MAIN** tab picks one
 (SPACE), or the file can be dragged onto the window. `README.txt` in the package covers controls,
 saves, mods and troubleshooting.
-
-Mods that other people share are listed at
-<https://github.com/topics/ob64-mod>.
 
 ## System Requirements
 
@@ -143,7 +192,8 @@ This project's own work is licensed under the GNU General Public License,
 version 3 or (at your option) any later version; the text is in
 [LICENSE](LICENSE). That covers the overhaul: the war director, the enemy
 commander, unit spawning and boss escorts, the class rebalance, the field
-controls and screens, the Organize screen, save profiles, the version, the
+controls and screens, the Organize screen, the content database, Lua scripts
+and mod system, save profiles, the version, the
 `roms` folder and the packaging changes. GPL-3.0 is required in any case,
 because the app links N64ModernRuntime, which is GPL-3.0.
 
