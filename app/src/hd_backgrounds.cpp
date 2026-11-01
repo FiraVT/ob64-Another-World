@@ -277,10 +277,13 @@ const Entry* find_entry(uint16_t scene, uint16_t next_scene, uint16_t step) {
 
 // Which part of the canvas a readback pass wrote, from the pass's dimensions.
 // The four passes are the four chunks of the 'B5' asset in order, and the sizes
-// name the column and the row of the tiling above. The x offsets are 1 less than
-// the column width in the asset's own header (a 1px overlap), and the y offsets
-// are 1 less than the row height; the rounded values below are what the draw
-// uses.
+// name the column and the row of the tiling above. The values are where the
+// game draws each chunk, measured by frankjniu (ogre-battle-64-recomp-windows,
+// commit cd60b83) with a pack whose pixels encode their canvas row and column:
+// the right chunks start at column 320, and the bottom chunks start at row 239,
+// over the top chunks' last row (the asset's header spaces the rows 239 apart).
+// With 240 the screen skipped canvas row 239, a one-row break across the whole
+// backdrop.
 bool chunk_rect(uint32_t w, uint32_t h, int& x, int& y) {
     if (w == 320 && h == 240) {
         x = 0;
@@ -292,11 +295,11 @@ bool chunk_rect(uint32_t w, uint32_t h, int& x, int& y) {
     }
     else if (w == 320 && h == 144) {
         x = 0;
-        y = 240;
+        y = 239;
     }
     else if (w == 176 && h == 144) {
         x = 320;
-        y = 240;
+        y = 239;
     }
     else {
         return false;

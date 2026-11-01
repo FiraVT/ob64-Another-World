@@ -42,6 +42,29 @@ Ogre Battle 64 recompilation, by lfarroco
     The static recompilation of the game that this project is a fork of,
     at commit 6429179 (2026-10-14).
 
+Ogre Battle 64 recompilation for Windows, by frankjniu
+    https://github.com/frankjniu/ogre-battle-64-recomp-windows
+
+    A fork of lfarroco's recompilation from the same commit. This project
+    ports these fixes and features from it, with the measurements that
+    found them:
+
+    - The audio task reply: the runtime no longer posts a dummy reply on
+      the audio queue, which had run the game one audio task ahead of the
+      RSP.
+    - The idle thread sleeps about 1 ms per pass instead of holding a host
+      CPU core.
+    - RT64's present and workload queues wait on a condition variable
+      instead of spinning on a lock.
+    - The lookup check: a streamed address runs the compiled body whose
+      ROM bytes are resident in RAM.
+    - 2D rectangles sample at the console's pixel positions, which removes
+      the seams in the dialogue boxes at high resolution.
+    - Cutscene backdrops place their bottom half at canvas row 239, which
+      removes a one-row break across the picture.
+    - The hang report (error.log when the game stops producing frames) and
+      the F5/F9 quick save of the battery save.
+
 N64Recomp, by Wiseguy (MIT license)
     The recompiler that turns the N64 code into native code. Built in with
     it: rabbitizer, {fmt}, SLJIT, toml++ and ELFIO.

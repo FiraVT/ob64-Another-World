@@ -233,6 +233,15 @@ These parts are built directly on it:
 The port also imports LordlyCaliber projects, so content made in rempred's
 editor plays here (`docs/anotherworld/design-ecosystem.md`).
 
+**frankjniu's Windows fork.**
+[frankjniu/ogre-battle-64-recomp-windows](https://github.com/frankjniu/ogre-battle-64-recomp-windows)
+forked lfarroco's recompilation from the same commit. This project ports
+several of its fixes and features, each with the measurement that found it:
+the audio task reply, the idle thread that held a CPU core, RT64's spinning
+queues, the lookup check for streamed code, sharp dialogue boxes at high
+resolution, the cutscene backdrop's missing row, the hang report and the
+F5/F9 quick save.
+
 **The name.** The series takes its titles from songs: Queen's "Ogre Battle" and
 "The March of the Black Queen". "Another World" is a song by Anohni, released
 by Antony and the Johnsons.

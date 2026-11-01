@@ -19,6 +19,7 @@
 #endif
 #include "music_replace.hpp"
 #include "overlay.hpp"
+#include "quick_save.hpp"
 #include "ui.hpp"
 #include "settings.hpp"
 #include "speed_badge.hpp"
@@ -1019,7 +1020,11 @@ void pump_sdl_events(Platform& platform, bool* quit) {
         // window exists belongs to the launcher.
         if (event.type == SDL_KEYDOWN && !event.key.repeat && platform.window != nullptr &&
             !overlay_visible()) {
-            handle_speed_key(event.key.keysym.sym);
+            // F5 / F9: quick save and quick load (quick_save.hpp), under the same
+            // conditions as the speed keys.
+            if (!ogre::quick_save_handle_key(event.key.keysym.sym)) {
+                handle_speed_key(event.key.keysym.sym);
+            }
         }
         // Fast-forward follows Tab's state, and ends when the panel opens.
         if (event.type == SDL_KEYDOWN && event.key.keysym.scancode == SDL_SCANCODE_TAB &&

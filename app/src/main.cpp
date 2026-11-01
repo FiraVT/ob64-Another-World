@@ -37,6 +37,8 @@
 
 #include "game.hpp"
 #include "crash_log.hpp"
+#include "hang_watch.hpp"
+#include "quick_save.hpp"
 #include "hd_backgrounds.hpp"
 #include "launcher.hpp"
 #include "input_map.hpp"
@@ -118,6 +120,24 @@ bool mod_test_run() {
     return value != nullptr && value[0] != '\0' && strcmp(value, "0") != 0;
 }
 
+// `OGRE_RELAUNCH=1`: this process was started by a quick load (quick_save.hpp)
+// and boots past the start screen with the mods as they stand, as the run that
+// started it did. Read once and cleared, so a process this one starts later
+// (the next quick load sets it again) does not inherit it by accident.
+bool relaunched_by_quick_load() {
+    static const bool relaunched = [] {
+        const char* value = getenv("OGRE_RELAUNCH");
+        const bool set = value != nullptr && value[0] != '\0' && strcmp(value, "0") != 0;
+#if defined(_WIN32)
+        _putenv("OGRE_RELAUNCH=");
+#else
+        unsetenv("OGRE_RELAUNCH");
+#endif
+        return set;
+    }();
+    return relaunched;
+}
+
 }  // namespace
 
 // Frames the game must have produced before an interactive exit goes through the
@@ -153,6 +173,10 @@ static void update_gfx(void*) {
     ogre::speed_badge_tick();
     // The F1 button legend (button_legend.hpp).
     ogre::button_legend_tick();
+    // A game that stops producing frames gets one error.log (hang_watch.cpp).
+    ogre::hang_watch_tick(ogre::g_platform.window);
+    // F5 / F9 quick save: an unconfirmed F9 expires, and scripted keys.
+    ogre::quick_save_tick();
     // The overlay's MAIN tab carries EXIT GAME. It records the request instead
     // of ending the run itself, so this one exit path prints the dumps below and
     // calls ultramodern::quit for both the close button and the panel. The
@@ -162,6 +186,11 @@ static void update_gfx(void*) {
     if (ogre::overlay_quit_requested()) {
         fprintf(stderr, "[overlay] EXIT GAME\n");
         fflush(stderr);
+        quit = true;
+    }
+    // A quick load restored the battery: end the run the same way, and main()
+    // starts the program again after the teardown (quick_save.hpp).
+    if (ogre::quick_save_restart_requested()) {
         quit = true;
     }
     if (quit) {
@@ -579,7 +608,9 @@ int main(int argc, char** argv) {
     if (shift_start) {
         fprintf(stderr, "[boot] Shift held: opening the start screen\n");
     }
-    if (rom_path.empty() || (!installed_mods.empty() && !mod_test_run()) || launcher_forced() || shift_start) {
+    if (rom_path.empty() ||
+        (!installed_mods.empty() && !mod_test_run() && !relaunched_by_quick_load()) ||
+        launcher_forced() || shift_start) {
         // The start screen is the whole interface: it returns the path of a ROM
         // it has already validated, or empty if the user closed the window.
         //
@@ -693,6 +724,11 @@ int main(int argc, char** argv) {
     ogre::speed_badge_shutdown();
     ogre::button_legend_shutdown();
     ogre::shutdown_sdl(ogre::g_platform);
+    // F9 quick load: start the program again, now that this one's window and
+    // runtime are gone (quick_save.hpp).
+    if (ogre::quick_save_restart_requested()) {
+        ogre::quick_save_relaunch();
+    }
     // The runtime does not join the game's own threads, so they are still
     // running recompiled code here. Running the C++ static destructors (what
     // `return` does next) with them live is a race, and it is what made closing

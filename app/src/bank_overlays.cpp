@@ -1,18 +1,27 @@
+#include <algorithm>
+#include <atomic>
 #include <chrono>
+#include <cstdarg>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <map>
+#include <mutex>
+#include <span>
 #include <string>
+#include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 #include "recomp.h"
+#include "librecomp/game.hpp"
 #include "librecomp/overlays.hpp"
 #include "ultramodern/ultramodern.hpp"
 
 #include "bank_overlays.hpp"
 #include "feature_flags.hpp"
+#include "overlays.hpp"
 // The live console is native-only (sdl_platform.cpp reads stdin and is not in
 // the Emscripten source list), so the browser build cannot call console::exec.
 #include "sdl_platform.hpp"  // ogre::console::exec (OGRE_CONSOLE_ON_CMD)
@@ -658,6 +667,180 @@ void poll_scene() {
 
 namespace {
 
+// --- Lookup check ------------------------------------------------------------
+//
+// Ported from frankjniu's ogre-battle-64-recomp-windows (commit 33c5df6).
+//
+// `get_function` resolves a dispatched address (`LOOKUP_FUNC`, including every
+// indirect `jalr`) through the runtime's function map, which follows the bank
+// DMAs this file recognises. A DMA the port does not recognise leaves the
+// previous bank's entries in place, and the lookup then runs that bank's body
+// over different resident code (AGENTS.md rule 4). The check compares the code
+// at the address in RDRAM with the ROM bytes of the mapped body, from the entry
+// to the delay slot of its first `jr ra`, at most 256 bytes. On a mismatch it
+// calls the compiled body, from any bank record or main-ELF section, whose ROM
+// bytes are the resident ones; that is the code the CPU would execute there.
+// When none matches, the map's answer stands. A miss is resolved the same way
+// before the runtime falls back to its stub. Each outcome other than "the map is
+// right" is logged once per address as a `[lookup]` line naming ROM offsets
+// (`tools/guestmap.py` maps them to units). A body the index does not know (a
+// mod hook's replacement) is left alone.
+//
+// A verdict is cached per address until the next DMA into the streamed window,
+// so a steady scene compares each body once. `OGRE_LOOKUP_CHECK=0` turns it off.
+
+constexpr uint32_t kStreamedLo = 0x8016A000u;
+constexpr uint32_t kStreamedHi = 0x80400000u;
+constexpr uint32_t kMaxCompareBytes = 0x100;
+constexpr uint32_t kJrRa = 0x03E00008u;
+
+struct LookupCandidate {
+    recomp_func_t* func;
+    uint32_t rom;        // ROM offset of the entry
+    uint32_t max_bytes;  // to the next entry of the same module, at most 256
+};
+
+struct LookupVerdict {
+    uint32_t generation;
+    recomp_func_t* mapped;
+    recomp_func_t* result;
+};
+
+std::mutex g_lookup_mutex;
+std::unordered_map<uint32_t, std::vector<LookupCandidate>> g_lookup_candidates;
+std::unordered_map<uint32_t, LookupVerdict> g_lookup_verdicts;
+std::unordered_set<uint64_t> g_lookup_logged;
+std::atomic<uint32_t> g_code_generation{1};
+
+void add_lookup_candidate(uint32_t ram, uint32_t rom, uint32_t max_bytes, recomp_func_t* func) {
+    if (ram < kStreamedLo || ram >= kStreamedHi || func == nullptr || max_bytes < 4) {
+        return;
+    }
+    g_lookup_candidates[ram].push_back({func, rom, std::min(max_bytes, kMaxCompareBytes)});
+}
+
+void build_lookup_index() {
+    for (const BankRecord& record : kBankRecords) {
+        std::vector<uint32_t> starts;
+        for (size_t i = 0; i < record.num_funcs; i++) {
+            starts.push_back((uint32_t)record.funcs[i].ram_addr);
+        }
+        std::sort(starts.begin(), starts.end());
+        const uint32_t end = (uint32_t)record.ram_start + record.size;
+        for (size_t i = 0; i < record.num_funcs; i++) {
+            const uint32_t ram = (uint32_t)record.funcs[i].ram_addr;
+            if (ram < (uint32_t)record.ram_start || ram >= end) {
+                continue;
+            }
+            const auto next = std::upper_bound(starts.begin(), starts.end(), ram);
+            const uint32_t stop = (next != starts.end() && *next < end) ? *next : end;
+            add_lookup_candidate(ram, record.rom_start + (ram - (uint32_t)record.ram_start),
+                                 stop - ram, record.funcs[i].func);
+        }
+    }
+    for_each_main_function(add_lookup_candidate);
+}
+
+uint32_t rom_word(std::span<const uint8_t> rom, uint32_t offset) {
+    return ((uint32_t)rom[offset] << 24) | ((uint32_t)rom[offset + 1] << 16) |
+           ((uint32_t)rom[offset + 2] << 8) | (uint32_t)rom[offset + 3];
+}
+
+// Whether RDRAM at `addr` holds the candidate's ROM words, up to and including
+// the delay slot of its first `jr ra`. Host RDRAM keeps each guest word native.
+bool resident_is(const uint8_t* rdram, uint32_t addr, const LookupCandidate& c) {
+    const std::span<const uint8_t> rom = recomp::get_rom();
+    const uint32_t* live = reinterpret_cast<const uint32_t*>(rdram + (addr - 0x80000000u));
+    const uint32_t words = c.max_bytes / 4;
+    if ((size_t)c.rom + c.max_bytes > rom.size()) {
+        return false;
+    }
+    for (uint32_t i = 0; i < words; i++) {
+        const uint32_t want = rom_word(rom, c.rom + 4 * i);
+        if (live[i] != want) {
+            return false;
+        }
+        if (want == kJrRa) {
+            return (i + 1 >= words) || (live[i + 1] == rom_word(rom, c.rom + 4 * (i + 1)));
+        }
+    }
+    return true;
+}
+
+void log_lookup_once(uint32_t addr, uint32_t key, const char* format, ...) {
+    if (!g_lookup_logged.insert(((uint64_t)addr << 32) | key).second) {
+        return;
+    }
+    char text[192];
+    va_list args;
+    va_start(args, format);
+    vsnprintf(text, sizeof(text), format, args);
+    va_end(args);
+    printf("[lookup] 0x%08X: %s\n", addr, text);
+    fflush(stdout);
+}
+
+recomp_func_t* decide_lookup(uint32_t addr, recomp_func_t* mapped) {
+    uint8_t* rdram = ultramodern::get_rdram_base();
+    const auto found = g_lookup_candidates.find(addr);
+    if (rdram == nullptr || found == g_lookup_candidates.end()) {
+        return nullptr;
+    }
+    const std::vector<LookupCandidate>& candidates = found->second;
+    const LookupCandidate* in_map = nullptr;
+    for (const LookupCandidate& c : candidates) {
+        if (c.func == mapped) {
+            in_map = &c;
+            break;
+        }
+    }
+    if (mapped != nullptr) {
+        if (in_map == nullptr || resident_is(rdram, addr, *in_map)) {
+            return nullptr;
+        }
+    }
+    for (const LookupCandidate& c : candidates) {
+        if (&c == in_map || !resident_is(rdram, addr, c)) {
+            continue;
+        }
+        if (in_map != nullptr) {
+            log_lookup_once(addr, c.rom,
+                            "the map has the body at rom 0x%06X; the resident code is rom "
+                            "0x%06X, so that body runs", in_map->rom, c.rom);
+        } else {
+            log_lookup_once(addr, c.rom,
+                            "not in the map; the resident code is rom 0x%06X, so that body runs",
+                            c.rom);
+        }
+        return c.func;
+    }
+    if (in_map != nullptr) {
+        log_lookup_once(addr, 0,
+                        "the resident code matches no compiled body; the map's body (rom "
+                        "0x%06X) runs", in_map->rom);
+    }
+    return nullptr;
+}
+
+recomp_func_t* lookup_check(int32_t addr_signed, recomp_func_t* mapped) {
+    const uint32_t addr = (uint32_t)addr_signed;
+    const uint32_t generation = g_code_generation.load(std::memory_order_relaxed);
+    std::lock_guard lock{g_lookup_mutex};
+    const auto cached = g_lookup_verdicts.find(addr);
+    if (cached != g_lookup_verdicts.end() && cached->second.generation == generation &&
+        cached->second.mapped == mapped) {
+        return cached->second.result;
+    }
+    recomp_func_t* result = decide_lookup(addr, mapped);
+    g_lookup_verdicts[addr] = {generation, mapped, result};
+    return result;
+}
+
+bool lookup_check_enabled() {
+    const char* value = getenv("OGRE_LOOKUP_CHECK");
+    return value == nullptr || value[0] != '0';
+}
+
 // The boot-resident/streamed overlays of the *main* ELF (config/config.yaml). The
 // runtime registers these from its own section table, so they are not in
 // kBankRecords; the diagnostic below still has to know them, or it reports
@@ -780,7 +963,11 @@ static uint32_t dma_trace_events = 0;
 
 // The game copies a record in 0x200-byte chunks; register it once, on the first
 // chunk. The runtime keeps the authoritative "is this RAM resident" state.
-void on_streamed_dma(uint32_t rom_offset, uint32_t ram_addr, uint32_t /*size*/) {
+void on_streamed_dma(uint32_t rom_offset, uint32_t ram_addr, uint32_t size) {
+    // New bytes in the streamed window invalidate the lookup check's verdicts.
+    if (ram_addr < kStreamedHi && ram_addr + size > kStreamedLo) {
+        g_code_generation.fetch_add(1, std::memory_order_relaxed);
+    }
     static const bool trace_dma = (getenv("OGRE_DMA_TRACE") != nullptr);
     if (trace_dma) {
         ++dma_trace_events;
@@ -911,6 +1098,14 @@ void dump_dma_trace() {
 
 void register_bank_overlays() {
     recomp::overlays::set_streamed_dma_hook(on_streamed_dma);
+    if (lookup_check_enabled()) {
+        if (g_lookup_candidates.empty()) {
+            build_lookup_index();
+        }
+        recomp::overlays::set_lookup_check(lookup_check);
+        printf("[lookup] checking %zu streamed entry point(s) against resident code\n",
+               g_lookup_candidates.size());
+    }
 
     // Mod hooks name a bank function by its record's ROM start and its vram
     // (`RECOMP_HOOK("func_ovl<U>_...")`, resolved against the merged

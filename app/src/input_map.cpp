@@ -599,11 +599,13 @@ std::string pad_source_text(const PadBinding& binding) {
 
 bool is_reserved_key(SDL_Scancode code) {
     // Escape opens and closes the in-game overlay, F1 the button legend, F2
-    // toggles AUTO-PLAY DIALOGUE, F3 the Organize view, Tab is the fast-forward
-    // hold and Print Screen and F12 take a screenshot (sdl_platform.cpp);
-    // binding one to a game button would make the two actions fight.
+    // toggles AUTO-PLAY DIALOGUE, F3 the Organize view, F5 and F9 quick save and
+    // quick load (quick_save.hpp), Tab is the fast-forward hold and Print Screen
+    // and F12 take a screenshot (sdl_platform.cpp); binding one to a game button
+    // would make the two actions fight.
     return code == SDL_SCANCODE_ESCAPE || code == SDL_SCANCODE_TAB || code == SDL_SCANCODE_F1 ||
-           code == SDL_SCANCODE_F2 || code == SDL_SCANCODE_F3 ||
+           code == SDL_SCANCODE_F2 || code == SDL_SCANCODE_F3 || code == SDL_SCANCODE_F5 ||
+           code == SDL_SCANCODE_F9 ||
            code == SDL_SCANCODE_PRINTSCREEN || code == SDL_SCANCODE_F12;
 }
 

@@ -168,6 +168,13 @@ in a game yet.
 ## Graphics and audio
 
 - **Pixel filter.** SMOOTH or SHARP scaling of the game picture.
+- **Sharp 2D rectangles.** Stretched 2D rectangles (the dialogue boxes)
+  sample at the console's pixel positions at any resolution, so the boxes
+  draw without seams (RT64 `upscale2D` `Original`; `OGRE_UPSCALE_2D`).
+  `renderer.cpp`. From frankjniu's Windows fork.
+- **Cutscene backdrops** place their bottom half at canvas row 239, as the
+  game draws it, so no row is missing across the picture.
+  `hd_backgrounds.cpp` `chunk_rect`. From frankjniu's Windows fork.
 - **HD textures.** Loads texture packs from `texture-packs/`, and TEXT FONT
   picks the font pack for the game's text.
 - **MUSIC and EFFECTS sliders** that set the game's own sound driver volumes.
@@ -179,6 +186,13 @@ in a game yet.
 
 - **Save backups.** Copies the cartridge save to `save-backups/` with a time
   stamp. `save_backup.cpp`.
+- **Quick save (F5) and quick load (F9).** F5 copies the battery save to
+  `saves/<game id>-quick.bin`; F9 twice within 3 s puts it back and restarts
+  the program at the title. `quick_save.cpp`. From frankjniu's Windows fork.
+- **Hang report.** When the game produces no frame for 5 s while its window
+  is open, the port writes `error.log` with the message-queue snapshot
+  (`OGRE_HANG_MS`, `0` turns it off). `hang_watch.cpp`. From frankjniu's
+  Windows fork.
 - **Save import.** Converts a save from `save-import/` or the Controller Pak
   file.
 - **Save profiles.** Saves made from the port's menu are kept per leader name,

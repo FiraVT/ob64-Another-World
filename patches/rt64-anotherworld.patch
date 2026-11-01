@@ -226,3 +226,105 @@ index 3402883..e48264f 100644
          void pushProjectionMatrix();
          void popProjectionMatrix();
 
+diff --git a/src/hle/rt64_present_queue.cpp b/src/hle/rt64_present_queue.cpp
+index 5dfb109..215d168 100644
+--- a/src/hle/rt64_present_queue.cpp
++++ b/src/hle/rt64_present_queue.cpp
+@@ -82,11 +82,12 @@ namespace RT64 {
+         int nextWriteCursor = (writeCursor + 1) % presents.size();
+ 
+         // Stall the thread until the barrier is lifted if we're trying to write on a present being used by the GPU.
+-        bool waitForBarrier;
+-        do {
+-            const std::scoped_lock lock(cursorMutex);
+-            waitForBarrier = (nextWriteCursor == barrierCursor);
+-        } while (waitForBarrier);
++        // OB64: wait on barrierCondition. The original loop re-took cursorMutex with no pause, which held a host
++        // core whenever the queue was full and competed with threadAdvanceBarrier for the same mutex.
++        {
++            std::unique_lock<std::mutex> lock(cursorMutex);
++            barrierCondition.wait(lock, [&]() { return nextWriteCursor != barrierCursor; });
++        }
+ 
+         // Modify the cursor and notify anything waiting on the queue.
+         {
+@@ -720,8 +721,12 @@ namespace RT64 {
+     }
+     
+     void PresentQueue::threadAdvanceBarrier() {
+-        std::scoped_lock<std::mutex> cursorLock(cursorMutex);
+-        barrierCursor = (barrierCursor + 1) % presents.size();
++        {
++            std::scoped_lock<std::mutex> cursorLock(cursorMutex);
++            barrierCursor = (barrierCursor + 1) % presents.size();
++        }
++
++        barrierCondition.notify_all();
+     }
+ 
+     void PresentQueue::threadLoop() {
+diff --git a/src/hle/rt64_present_queue.h b/src/hle/rt64_present_queue.h
+index e08b02c..1c89bcc 100644
+--- a/src/hle/rt64_present_queue.h
++++ b/src/hle/rt64_present_queue.h
+@@ -36,6 +36,9 @@ namespace RT64 {
+         int barrierCursor;
+         std::mutex cursorMutex;
+         std::condition_variable cursorCondition;
++        // OB64: signalled when barrierCursor moves, so a producer waiting for a free
++        // slot blocks instead of spinning on cursorMutex.
++        std::condition_variable barrierCondition;
+         uint64_t presentId;
+         std::mutex presentIdMutex;
+         std::condition_variable presentIdCondition;
+diff --git a/src/hle/rt64_workload_queue.cpp b/src/hle/rt64_workload_queue.cpp
+index 11cb795..24fad2c 100644
+--- a/src/hle/rt64_workload_queue.cpp
++++ b/src/hle/rt64_workload_queue.cpp
+@@ -51,11 +51,12 @@ namespace RT64 {
+         int nextWriteCursor = (writeCursor + 1) % workloads.size();
+ 
+         // Stall the thread until the barrier is lifted if we're trying to write on a workload being used by the GPU.
+-        bool waitForBarrier;
+-        do {
+-            const std::scoped_lock lock(cursorMutex);
+-            waitForBarrier = (nextWriteCursor == barrierCursor);
+-        } while (waitForBarrier);
++        // OB64: wait on barrierCondition. The original loop re-took cursorMutex with no pause, which held a host
++        // core whenever the queue was full and competed with threadAdvanceBarrier for the same mutex.
++        {
++            std::unique_lock<std::mutex> lock(cursorMutex);
++            barrierCondition.wait(lock, [&]() { return nextWriteCursor != barrierCursor; });
++        }
+ 
+         // Modify the cursor and notify anything waiting on the queue.
+         {
+@@ -874,8 +875,12 @@ namespace RT64 {
+     }
+ 
+     void WorkloadQueue::threadAdvanceBarrier() {
+-        std::scoped_lock<std::mutex> cursorLock(cursorMutex);
+-        barrierCursor = (barrierCursor + 1) % workloads.size();
++        {
++            std::scoped_lock<std::mutex> cursorLock(cursorMutex);
++            barrierCursor = (barrierCursor + 1) % workloads.size();
++        }
++
++        barrierCondition.notify_all();
+     }
+ 
+     void WorkloadQueue::threadAdvanceWorkloadId(uint64_t newWorkloadId) {
+diff --git a/src/hle/rt64_workload_queue.h b/src/hle/rt64_workload_queue.h
+index bde2f03..210fc7c 100644
+--- a/src/hle/rt64_workload_queue.h
++++ b/src/hle/rt64_workload_queue.h
+@@ -67,6 +67,9 @@ namespace RT64 {
+         int barrierCursor;
+         std::mutex cursorMutex;
+         std::condition_variable cursorCondition;
++        // OB64: signalled when barrierCursor moves, so a producer waiting for a free
++        // slot blocks instead of spinning on cursorMutex.
++        std::condition_variable barrierCondition;
+         uint64_t workloadId;
+         uint64_t lastPresentId;
+         std::mutex workloadIdMutex;

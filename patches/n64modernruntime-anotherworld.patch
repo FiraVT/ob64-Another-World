@@ -183,3 +183,96 @@ index 6ad498c..261e64e 100644
      void* bt[32];
      int n = backtrace(bt, 32);
 
+diff --git a/librecomp/include/librecomp/overlays.hpp b/librecomp/include/librecomp/overlays.hpp
+index aa5ca62..069a845 100644
+--- a/librecomp/include/librecomp/overlays.hpp
++++ b/librecomp/include/librecomp/overlays.hpp
+@@ -115,6 +115,13 @@ namespace recomp {
+         // offset, `ram_addr` the RDRAM destination.
+         void set_streamed_dma_hook(void (*hook)(uint32_t rom_offset, uint32_t ram_addr, uint32_t size));
+ 
++        // Installed by the app; get_function calls it for every address in the
++        // streamed window, with the function the map holds there (nullptr on a
++        // miss). It returns the function to call instead, or nullptr to keep
++        // the map's answer (or the stub on a miss).
++        using lookup_check_t = recomp_func_t* (*)(int32_t addr, recomp_func_t* mapped);
++        void set_lookup_check(lookup_check_t check);
++
+         // Called by recomp::do_rom_read(): loads/relocates the streamed section
+         // covering the DMA, then forwards to the app hook.
+         void notify_rom_read(uint32_t rom_offset, uint32_t ram_addr, uint32_t size);
+diff --git a/librecomp/src/overlays.cpp b/librecomp/src/overlays.cpp
+index c3f3dc8..d1a96e8 100644
+--- a/librecomp/src/overlays.cpp
++++ b/librecomp/src/overlays.cpp
+@@ -396,6 +396,12 @@ void recomp::overlays::set_streamed_dma_hook(void (*hook)(uint32_t, uint32_t, ui
+     streamed_dma_hook = hook;
+ }
+ 
++static recomp::overlays::lookup_check_t lookup_check = nullptr;
++
++void recomp::overlays::set_lookup_check(lookup_check_t check) {
++    lookup_check = check;
++}
++
+ // ---------------------------------------------------------------------------
+ // Overlay-state checkpoints (Phase 4 tooling).
+ //
+@@ -747,14 +753,23 @@ static void dump_caller_chain(const char* label) {
+ 
+ extern "C" recomp_func_t * get_function(int32_t addr) {
+     auto func_find = func_map.find(addr);
+-    if (func_find != func_map.end()) {
+-        return func_find->second;
++    recomp_func_t* mapped = (func_find != func_map.end()) ? func_find->second : nullptr;
++    uint32_t a = (uint32_t)addr;
++    // OB64: the app checks a streamed address against the code resident in
++    // RDRAM (app/src/bank_overlays.cpp, lookup_check).
++    if (lookup_check != nullptr && a >= 0x8016A000 && a < 0x80400000) {
++        recomp_func_t* checked = lookup_check(addr, mapped);
++        if (checked != nullptr) {
++            return checked;
++        }
++    }
++    if (mapped != nullptr) {
++        return mapped;
+     }
+ 
+     // Bring-up fallback: streamed overlays are loaded into RDRAM by the game's
+     // DMA but are not yet all recompiled/registered (Phase 4). Log and return a
+     // no-op stub so the boot can proceed instead of hard-failing.
+-    uint32_t a = (uint32_t)addr;
+     if ((a >= 0x8016A000 && a < 0x80400000) || (a >= 0x84000000 && a < 0x84200000)) {
+         last_streamed_stub_addr.store(a);
+         // Temporary diagnostic: dump the calling thread's recompiled call chain
+diff --git a/ultramodern/src/mesgqueue.cpp b/ultramodern/src/mesgqueue.cpp
+index c0620f3..1e4e18a 100644
+--- a/ultramodern/src/mesgqueue.cpp
++++ b/ultramodern/src/mesgqueue.cpp
+@@ -675,26 +675,6 @@ bool do_recv(RDRAM_ARG PTR(OSMesgQueue) mq_, PTR(OSMesg) msg_, bool block) {
+         set_thread_blocked(PASS_RDRAM ThreadBlockKind::Recv, mq_);
+         while (MQ_IS_EMPTY(mq)) {
+             OGRE_TRACE("[mq] T=%llu Thread %d BLOCKED on receive from queue 0x%08X\n", (unsigned long long)ultramodern::trace_millis(), TO_PTR(OSThread, ultramodern::this_thread())->id, (uint32_t)mq_);
+-            // Bring-up emulation: the game's audio driver blocks on 0x800C49E8
+-            // waiting for the audio task's buffer to finish playing, which
+-            // requires the RSP audio ucode to produce output and the AI DMA to
+-            // complete — neither of which is emulated yet. Auto-respond with a
+-            // dummy message so the boot can proceed (audio will be silent until
+-            // the ucode is recompiled).
+-            if (mq_ == (PTR(OSMesgQueue))(int32_t)0x800C49E8) {
+-                std::lock_guard lock{pending_direct_mutex};
+-                bool already = false;
+-                for (const auto& pd : pending_direct_sends) {
+-                    if (pd.mq == (int32_t)0x800C49E8) {
+-                        already = true;
+-                        break;
+-                    }
+-                }
+-                if (!already) {
+-                    printf("[dbg] audio-response queue 0x800C49E8 blocked; queuing dummy response\n");
+-                    pending_direct_sends.push_back({(int32_t)0x800C49E8, 0, false, 4});
+-                }
+-            }
+             ultramodern::thread_queue_insert(PASS_RDRAM GET_MEMBER(OSMesgQueue, mq_, blocked_on_recv), ultramodern::this_thread());
+             ultramodern::run_next_thread_and_wait(PASS_RDRAM1);
+         }

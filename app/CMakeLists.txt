@@ -315,6 +315,8 @@ set(OGRE_APP_SOURCES
     src/launcher.cpp
     src/overlay.cpp
     src/speed_badge.cpp
+    src/hang_watch.cpp
+    src/quick_save.cpp
     features/button_legend.cpp
     features/save_backup.cpp
     features/save_profiles.cpp
