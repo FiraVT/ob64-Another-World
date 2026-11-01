@@ -366,15 +366,15 @@ UI, so `app/src/web_platform.cpp` still plays at full volume.
 ## Mouse enabled (the SETTINGS tab)
 ```
 INPUT
-MOUSE ENABLED   [x] OFF [ ] ON
+MOUSE ENABLED   [ ] OFF [x] ON
 ```
 
-MOUSE ENABLED is the switch for the port's mouse support, and `OFF` is the
-default. `ON` lets the pointer drive the two screen cursors the port implements:
+MOUSE ENABLED is the switch for the port's mouse support, and `ON` is the
+default (2026-11-01; it was `OFF` before). `ON` lets the pointer drive the two screen cursors the port implements:
 the world map's (scene `0x05`) and the mission field's (scene `0x03`), with the
 left click that acts as the game's `A` and the edge push that scrolls either
-view. `OFF` is what every build before the row did, and the operating system
-pointer is then left visible over the game window, because the game is played
+view. With `OFF` the cursors are not driven by the pointer, and the operating
+system pointer is left visible over the game window, because the game is played
 with the keyboard or a pad.
 
 The row is published to `ogre_map_cursor_set_enabled` and
@@ -383,7 +383,8 @@ overlay takes effect on the next frame. The value is saved at
 `<config>/settings.cfg` as `mouse = off|on`; `OGRE_MOUSE=off|on` overrides the
 file for one run without writing it, and `OGRE_MAP_CURSOR` /
 `OGRE_MISSION_CURSOR` still force one screen on or off whatever the row says.
-A file written before the row existed has no key and loads as `OFF`.
+A file written before the row existed has no key and loads as `ON`. A file that
+saved `mouse = off` keeps it off.
 
 ## The in-game overlay
 

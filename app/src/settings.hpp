@@ -31,7 +31,7 @@
 //   `res_option`, `msaa_option` and `wm_option`; each writer starts from the live
 //   config, so none loses another's value.
 // * AUDIO: SOUNDS and VOLUME.
-// * INPUT: MOUSE ENABLED, off by default, which is what lets the pointer drive
+// * INPUT: MOUSE ENABLED, on by default, which is what lets the pointer drive
 //   the world map's and the mission field's cursors. See `MouseMode` below.
 //
 // The file is `<config>/settings.cfg`, plain text.

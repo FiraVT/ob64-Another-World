@@ -39,7 +39,7 @@ override it for one run, and `OGRE_MOUSE=off|on` sets the row itself.
 
 | Variable | Effect |
 |---|---|
-| `MOUSE ENABLED` (SETTINGS, default `OFF`) | the player-facing switch for both cursors: the world map's and the mission field's, with the click and the edge scroll. `Off` is what every build before the row did |
+| `MOUSE ENABLED` (SETTINGS, default `ON`) | the player-facing switch for both cursors: the world map's and the mission field's, with the click and the edge scroll. `Off` is what builds before the row did |
 | `OGRE_MOUSE=off\|on` | set the row for one run without the UI |
 | `OGRE_CLASS_TABLE_MOVE=0` | keep the class table's readers on the ROM's table instead of the content database's copy at `0x80607C34`, which is the default (`docs/anotherworld/design-new-classes.md` section 3) |
 | `OGRE_CLASS_ANIMATION=0` | hand the game the ROM's class animation resource (asset `0x00315736`) even when packs make new classes, instead of the copy extended to 256 class ids (`docs/anotherworld/design-new-classes.md` section 7). New classes then read past the ROM's 172 rows; the switch exists to isolate a fault |

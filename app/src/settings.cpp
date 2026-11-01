@@ -47,7 +47,7 @@ int g_volume = kVolumeDefaultPercent;
 // `apply_mix_volumes`).
 int g_music = kVolumeDefaultPercent;
 int g_effects = kVolumeDefaultPercent;
-MouseMode g_mouse = MouseMode::Off;
+MouseMode g_mouse = MouseMode::On;
 
 
 // Defined below, after the gate that decides whether the two experimental values
@@ -367,15 +367,15 @@ DisplayMode parse_display(const std::string& text) {
     return DisplayMode::Windowed;
 }
 
-// `mouse = off` / `on`, or 0 / 1. A file written before the row existed has no
-// key, and the value is then the default `off`: the pointer driving a cursor is
-// opt-in.
+// `mouse = off` / `on`, or 0 / 1. A missing or unparsable value is the default
+// `on` (the maintainer, 2026-11-01): a file written before the row existed has
+// no key and loads with the mouse enabled.
 MouseMode parse_mouse(const std::string& text) {
     const std::string value = lowercase(setting_value(text, "mouse"));
-    if (value == "on" || value == "1" || value == "true" || value == "yes") {
-        return MouseMode::On;
+    if (value == "off" || value == "0" || value == "false" || value == "no") {
+        return MouseMode::Off;
     }
-    return MouseMode::Off;
+    return MouseMode::On;
 }
 
 // `volume = <n>` in percent, clamped to 0..100. A missing or unparsable value
@@ -855,7 +855,7 @@ MouseMode mouse_mode() {
 
 int mouse_mode_index() {
     const int index = static_cast<int>(g_mouse);
-    return index >= 0 && index < kMouseModeCount ? index : static_cast<int>(MouseMode::Off);
+    return index >= 0 && index < kMouseModeCount ? index : static_cast<int>(MouseMode::On);
 }
 
 void set_mouse_mode(MouseMode mode) {
@@ -1016,7 +1016,7 @@ void load_settings(const std::filesystem::path& pref_dir) {
     DisplayMode display = DisplayMode::Windowed;
     SoundMode sound = SoundMode::On;
     int volume = kVolumeDefaultPercent;
-    MouseMode mouse = MouseMode::Off;
+    MouseMode mouse = MouseMode::On;
     bool have_file = false;
     const std::string text = read_file(settings_path(pref_dir), have_file);
     // This project's options (app/features/options.hpp); with no file, `text` is

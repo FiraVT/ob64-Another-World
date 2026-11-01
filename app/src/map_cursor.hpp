@@ -3,7 +3,7 @@
 #include <cstdint>
 
 // The world map's cursor, driven by the mouse (scene 0x05 only), and only while
-// the MOUSE ENABLED setting is on (`settings.cpp`, off by default;
+// the MOUSE ENABLED setting is on (`settings.cpp`, on by default;
 // `OGRE_MAP_CURSOR=1`/`=0` overrides it for one run).
 //
 // Milestone A (landed, developer-confirmed 2026-10-10): the cursor sprite
