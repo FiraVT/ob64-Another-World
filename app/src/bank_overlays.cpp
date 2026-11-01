@@ -262,9 +262,14 @@ extern "C" void ogre_skip_intro(uint8_t* rdram) {
 // of Load Game before a save loaded left the title in state 13 (the blinking
 // PRESS START, func_8019BD0C 0x8019BFDC) with no press (developer report
 // 2026-10-30, captures 2-4 of 04:42: state 11 then 13, flag 0x801BA564 clear).
+//
+// In the same window A (0x8000) also counts as START, with or without the
+// setting. The title tests only 0x1000 (andi at 0x8019BE08), and START is P on
+// the keyboard, so Enter and Space did nothing at PRESS START (developer report
+// 2026-11-01: the keyboard worked only with SKIP INTRO on).
 extern "C" void ogre_skip_title_press(uint8_t* rdram) {
     static bool pressed = false;
-    if (rdram == nullptr || !ogre::feature::skip_intro() || getenv("OGRE_SCENE") != nullptr) {
+    if (rdram == nullptr) {
         return;
     }
     auto byte = [rdram](uint32_t address) { return rdram[(address & 0x1FFFFFFFu) ^ 3u]; };
@@ -274,11 +279,17 @@ extern "C" void ogre_skip_title_press(uint8_t* rdram) {
         pressed = false;
         return;
     }
-    if (pressed || byte(0x801BA564) != 0) {
+    if (byte(0x801BA564) != 0) {
+        return;
+    }
+    uint16_t& buttons = *reinterpret_cast<uint16_t*>(rdram + ((0x800C4B28u & 0x1FFFFFFFu) ^ 2u));
+    if ((buttons & 0x8000u) != 0) {
+        buttons = static_cast<uint16_t>(buttons | 0x1000u);
+    }
+    if (pressed || !ogre::feature::skip_intro() || getenv("OGRE_SCENE") != nullptr) {
         return;
     }
     pressed = true;
-    uint16_t& buttons = *reinterpret_cast<uint16_t*>(rdram + ((0x800C4B28u & 0x1FFFFFFFu) ^ 2u));
     buttons = static_cast<uint16_t>(buttons | 0x1000u);
     fprintf(stderr, "[scene] SKIP INTRO: title state %u, pressing Start once\n", state);
     fflush(stderr);

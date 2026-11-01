@@ -158,6 +158,9 @@ in a game yet.
   that grows with its length; choices still wait. `dialogue_autoplay.cpp`.
 - **Turbo A.** A held A presses and releases in turns.
 - **Skip intro.** Boot straight to the title menu.
+- **Confirm at PRESS START.** A (Enter or Space on the keyboard) opens the
+  title menu as Start does; the game tests only Start there.
+  `bank_overlays.cpp` `ogre_skip_title_press`.
 - **Pause when unfocused.**
 - **Keep pointer in window.** Pushing the pointer against an edge scrolls the
   field instead of leaving the window.
