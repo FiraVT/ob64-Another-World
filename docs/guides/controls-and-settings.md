@@ -235,13 +235,6 @@ Observations from the verification runs (2026-09-25, `history-archive:docs/histo
   width.
 * The `MISSION` banner row clips at both screen edges in 4:3 as well: it is the
   game's own scrolling marquee and not an Expand artifact.
-* Proofs: `native-widescreen-launcher.png` (the row) and
-  `native-widescreen-overlay.png` (the same row in the `ESC` overlay),
-  `native-widescreen-pillarbox.png` and `native-widescreen-43-window.png` (the
-  Load Game book in `ON` and `OFF` — the identical screen with and without
-  the side bars), `native-widescreen-mission-expand.png` and
-  `native-widescreen-mission-43.png` (a battle in the mission, in `ON` and
-  `OFF`; not the same battle frame, but the same area and camera).
 
 ```bash
 # the row, as a PPM (a ROM is auto-found, so force the launcher)
@@ -337,11 +330,6 @@ environment variable (`OGRE_GRAPHICS_API`). `REFRESH RATE` and
 `HIGH-PRECISION FRAMEBUFFER` are also in `GraphicsConfig` and remain at their
 defaults.
 
-Proofs: `native-launcher-settings.png` (shipped rows),
-`native-launcher-settings-experiments.png` (`OGRE_DISPLAY_EXPERIMENTS=1`) and
-`native-overlay-settings.png` (the shipped rows, with the pad script below having
-set WINDOW to FULLSCREEN).
-
 ## Sounds and volume (the SETTINGS tab)
 ```
 AUDIO
@@ -375,11 +363,6 @@ rows existed has neither key and loads as `ON` / `100`, which is what the app di
 before them. The browser build does not read `settings.cfg` and has no settings
 UI, so `app/src/web_platform.cpp` still plays at full volume.
 
-Proofs: `native-launcher-settings.png`, `native-launcher-settings-experiments.png`
-and `native-overlay-settings.png` (the tab in the launcher, the same tab with the
-experimental rows enabled, and in the `ESC` overlay with the pad script above
-having set WINDOW to FULLSCREEN).
-
 ## Mouse enabled (the SETTINGS tab)
 ```
 INPUT
@@ -401,10 +384,6 @@ overlay takes effect on the next frame. The value is saved at
 file for one run without writing it, and `OGRE_MAP_CURSOR` /
 `OGRE_MISSION_CURSOR` still force one screen on or off whatever the row says.
 A file written before the row existed has no key and loads as `OFF`.
-
-Proofs: `docs/proofs/native-launcher-mouse-off.png` and
-`-mouse-on.png` (the SETTINGS tab with the row off, and after the scripted key
-run turned it on).
 
 ## The in-game overlay
 

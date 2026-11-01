@@ -73,8 +73,8 @@ start from here.
 - **Known open walls**, as of session 45, with the later corrections below. The
   New Game opening runs. Step 1 (the movie, sepia courtyard) renders. Step 2
   renders the cathedral dialogue (`Archbishop Odiron` / "He who has learned the
-  way of the sword and god's teachings,") on both renderers
-  (`docs/proofs/native-newgame-cathedral.png`), and then waits for input. The wall
+  way of the sword and god's teachings,") on both renderers,
+  and then waits for input. The wall
   that looked like step 2 was a missing streamed module: scene `0x0D` streams
   `bankRec14c` (ROM `0x2A8CF0`, 0x56A0) over `bankRec14b` at RAM `0x802395E0` for
   steps ≥ 2, and the port had only rec14b, so unit C's 95 calls into that arena ran
@@ -103,7 +103,7 @@ start from here.
   so the port's build-time bindings ran overlay C's bodies at the module's
   addresses; none of the module's 24 internal `jal` targets were main-ELF entries.
   It is now bank unit H, and the six calls into it are dispatched. The name-entry
-  form renders (`docs/proofs/native-newgame-name-entry.png`). The general rule: a
+  form renders. The general rule: a
   streamed module that is not in the segment table still owns a swappable RAM
   range, and needs the session-45 treatment. `tools/cross_bank.py`'s overlap model
   had to be fixed to see it.
@@ -153,9 +153,8 @@ start from here.
   `U'=U-128`, `V'=V-128`); `K1` pairs with U, and `K2` with V. Session 51 fed the
   raw unsigned fields in and paired `K1` with V, so the green row exploded positive
   and the backdrop drew as blue banding. Session 52 fixed both, and the backdrop is
-  now the cathedral. `docs/proofs/native-newgame-cathedral.png` and
-  `-cathedral-background.png` were replaced; the old files were the black/blue-band
-  broken renders, mistaken for correct because the top of the real scene is dark.
+  now the cathedral. The earlier captures of it were the black/blue-band broken
+  renders, mistaken for correct because the top of the real scene is dark.
   The geometry, the de-interleaved TMEM planes and the UYVY source are all verified
   correct, so session 51 §7's "the defect is in sampling/upload" is wrong. `K4` and
   `K5` as combiner inputs stay the raw fields over 255 (GLideN64
@@ -213,17 +212,16 @@ start from here.
   reading `0x8023A9xx` reads the DMA'd arena image. Session 58's probe58 conclusion
   ("the engine init does not run on the faulting visit") and its `0x8023A994`
   readings describe the same crash from the wrong address.
-  Result: the Prologue card renders
-  (`docs/proofs/native-newgame-prologue-card.png`); the opening plays on into the
-  post-movie story (General Godeslas `-received-for-duty.png`; Magnus
-  `-magnus-old-man.png`) and reaches scene `0x05` (descriptor `0x8018FD70`, mask
+  Result: the Prologue card renders; the opening plays on into the
+  post-movie story (General Godeslas receiving the soldiers; Magnus and the old
+  man) and reaches scene `0x05` (descriptor `0x8018FD70`, mask
   `0x2`), whose module is unit M (ROM `0x79750`, 0xDAD0 → RAM `0x8019A7C0`). The
   other bank of that RAM is unit H, whose real size is `0x84B0`, and not the
   `0x8600` that session 55 recorded. A bank's size is its DMA's, and "do we know
   this module?" must compare the chunk's rom→ram delta rather than the ROM range
   alone; that range test is what hid unit M behind unit H's over-claimed size.
-  Scene `0x05` is the map scene (developer, session 60), and it renders
-  (`docs/proofs/native-newgame-map-scene.png`). It stayed on the prologue's black
+  Scene `0x05` is the map scene (developer, session 60), and it renders.
+  It stayed on the prologue's black
   fade because no frames were produced. The scene update's `jal 0x8019AF0C`
   (`func_8017B858` @0x8017B8A0) and the scene hook's `jal 0x801A103C`
   (`func_8017B9C8` @0x8017BA10) are calls into the RAM the module occupies, and

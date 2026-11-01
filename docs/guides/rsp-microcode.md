@@ -131,7 +131,7 @@ Three fixes were needed after session 49's reverted first attempt:
   9-bit fields into the matrix, while the hardware sign-extends each field and
   scales it `2*K+1`, and the green row paired `K1` with V instead of U.
 
-The result is `docs/proofs/native-newgame-cathedral.png`; the assembled `'B5'`
+The assembled `'B5'`
 image at `0x80243E28` renders as the cathedral. Session 49's reading and the
 earlier "still black" notes in `-session48.md`/`-session47.md` are superseded.
 The readback's source selection is `config/hooks.toml`, and

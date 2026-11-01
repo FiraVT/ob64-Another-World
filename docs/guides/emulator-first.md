@@ -157,7 +157,7 @@ The cheapest routes, in order:
    RDRAM block are in the core). Then diff the two images at the same guest
    address — for the map that is `state[+0x04]+0x1068` and `state[+0x34]`.
 2. **Screenshot A/B.** Weaker but immediate: the same screen from a reference
-   emulator next to `docs/proofs/native-newgame-map-scene.png`. This settles
+   emulator next to the port's capture of it. This settles
    "does retail show the knight here at all" (AGENTS §1 oracle question) without
    any memory plumbing.
 3. **mupen64plus-rsp-hle as the HLE reference.** Its task detection is in

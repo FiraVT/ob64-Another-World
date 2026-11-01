@@ -372,8 +372,7 @@ OGRE_TAP_MS=4000 OGRE_CAPTURE_PRESENT=/tmp/game OGRE_CAPTURE_AFTER=30 \
 # -> /tmp/game.31.ppm ... : the twelve soldiers of the title screen
 ```
 
-`docs/proofs/native-game-title.png` and `native-game-title-still.png` are captures
-of that run. A healthy run submits the game's real display lists
+A healthy run submits the game's real display lists
 (`data=0x801C1520` / `0x801C80A0` alternating, ~2.5/s) rather than only the boot
 blanking list at `0x800C6500`.
 
@@ -803,9 +802,7 @@ the route alone proves nothing:
 Same screen, same route, two config dirs, different playtime — the game is reading
 the file this script installed. `OGRE_SAVE=prologue` rebuilds that battery
 **byte-identically** to `tools/sramsave.py import` (device header and slot 0
-compared directly), so the two entry points are one conversion. Proofs:
-`docs/proofs/native-load-game-prologue.png`,
-`docs/proofs/native-load-game-battery-ab.png`. The same file imported *without*
+compared directly), so the two entry points are one conversion. The same file imported *without*
 reseeding the header checksums makes the game repair the whole image to its blank
 format (sha256 `ed38cfd7…`), which is what the seed rule above predicts.
 
@@ -887,8 +884,7 @@ tools/rdram.py /tmp/at-cathedral.bin image 0x80243E28 --width 320 -o /tmp/dst.pn
 With the console reading `desc=0x8018FC3C` and `step=0x021D8002` (the cathedral
 step after the name form), `0x80243E28` is the backdrop: the fix shows the
 cathedral, the old scratch-first rule showed the name-entry form — that is the
-intermittent artifact (`docs/proofs/native-newgame-backdrop-old-rule.png` vs
-`-backdrop-fixed.png`).
+intermittent artifact.
 
 ### `tools/rdram.py diff A.bin B.bin` — what did a run change, by module?
 

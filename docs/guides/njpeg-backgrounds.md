@@ -106,7 +106,7 @@ the same tile — but note that this is *inferred*, not verified from the blit.
 
 **Do not read the framebuffer as the scene.** At the cathedral step
 `0x80000400` contains four background chunks in a 2x2 arrangement with black
-seams (`docs/proofs/native-newgame-backdrop-chunks.png`), but the developer
+seams, but the developer
 confirms the chunks are **out of order** — the arrangement in the framebuffer is
 *not* the on-screen arrangement. Reordering (and rescaling) the chunks is what
 the readback and the following blit are for, and the four copies taken together
@@ -119,8 +119,7 @@ buffers, not from this render.
 * **The three game framebuffers are contiguous 320x240 buffers** —
   `D_800A8204 = {0x80000400, 0x80025C00, 0x8004B400}`, `0x25800` apart. Render
   `0x80000400` for 320 rows and rows 240-319 are the *next* buffer's content (in
-  session 57's dump, the name-entry form — which is why
-  `docs/proofs/native-newgame-backdrop-chunks.png` shows a form strip below the
+  session 57's dump, the name-entry form, which shows as a form strip below the
   chunks; that strip is **not** part of the background). Any over-read or
   mis-sourced read shows the neighbour, which is why "the backdrop holds the
   previous screen" always looked like a timing bug.

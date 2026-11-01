@@ -469,8 +469,8 @@ struct PanelMetrics {
 PanelMetrics measure_panel(const Font& font, Panel& panel, int output_width,
                            int top_y, float ui_scale, int output_height = 0);
 
-// Writes the renderer's current output as a binary PPM. Development aid for the
-// screenshots in `docs/proofs`: it reads back exactly what the UI drew.
+// Writes the renderer's current output as a binary PPM. Development aid for
+// screenshots: it reads back exactly what the UI drew.
 bool write_ppm(SDL_Renderer* renderer, const std::filesystem::path& path);
 
 // Draws the tab bar and the active tab's rows, and stores the hit-test geometry

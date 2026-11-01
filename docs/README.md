@@ -42,7 +42,6 @@ first.
 | [scenes.md](scenes.md) | What each screen should show, from the maintainer, and the port's status per screen |
 | [symbols.md](symbols.md) | Proposed symbol names: address, name, evidence, confidence |
 | [notes/](notes/) | Research notes on items, drops, saves, bank hooks, the tutorial crash and the black sprite |
-| [proofs/](proofs/) | Screenshots that earlier sessions cite as evidence |
 
 ## History
 
