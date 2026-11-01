@@ -1,0 +1,7 @@
+{
+  "_comment": "An example new class. Copy this folder into user-content/ to try it; docs/anotherworld/design-new-classes.md explains new classes.",
+  "id": "new-class-example",
+  "name": "New Class Example",
+  "version": "1.0",
+  "description": "Adds the Dragon Knight, a new class with its own portrait and figures, offered in Change Class. A mod that adds classes switches on or off at the next start."
+}

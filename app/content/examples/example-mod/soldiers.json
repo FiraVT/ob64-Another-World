@@ -1,0 +1,11 @@
+{
+  "_comment": "Soldiers (class 1) get a new name and much more HP and STR, so the change shows in the first battle. content-dump/classes.json lists every class's values.",
+  "classes": {
+    "1": {
+      "_name": "Soldier",
+      "name": "Iron Soldier",
+      "hp_base": 150,
+      "str_base": 80
+    }
+  }
+}

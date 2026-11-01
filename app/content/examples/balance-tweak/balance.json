@@ -1,0 +1,17 @@
+{
+  "_comment": "Named fields of an item and a class. content-dump/ in the settings folder lists every original record with its fields; copy a record from there and change it. A field you leave out keeps the game's value.",
+  "items": {
+    "1": {
+      "_name": "Short Sword",
+      "str": 8,
+      "price": 10
+    }
+  },
+  "classes": {
+    "12": {
+      "_name": "Wizard",
+      "int_base": 70,
+      "int_growth": 6
+    }
+  }
+}

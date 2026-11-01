@@ -1,0 +1,53 @@
+#pragma once
+
+// Forward declaration: SDL typedefs `SDL_Window` as `struct SDL_Window`, so this
+// header does not need SDL.
+struct SDL_Window;
+
+namespace ogre {
+
+// Applies the WIDESCREEN setting to RT64's aspect ratio and reports whether the
+// *mode* changed since the previous call.
+//
+// The setting (`settings.hpp`) is a toggle, not an aspect ratio: RT64 has one
+// Expand mode, and this decides when it is on. `Off` is always 4:3, and `On` is
+// Expand while the dispatcher runs a scene in the expand set (the mission `0x03`
+// and the dialogue/cutscene scene `0x0D`, plus every scene the HD-background
+// pack covers) and 4:3 elsewhere, in a window that stays 16:9 either way.
+// Scene `0x0D` expands with or without the pack: its own 496x384 backdrop has
+// content the 4:3 view crops, so the wider view reveals it.
+//
+// Called once per frame from the app's `update_gfx` callback, because the
+// scene can change on any frame. The function reads the live
+// `ultramodern::renderer::GraphicsConfig` and writes it only when the wanted
+// `ar_option` differs, so a steady scene costs one comparison per frame and the
+// renderer sees one `update_config` at each transition.
+//
+// The return value is about the window and not about the scene: the window's
+// shape follows the mode, so it changes only when the player changes the mode.
+// A scene transition resizes nothing. In a widescreen mode the window stays
+// wide and the 4:3 scenes are pillarboxed inside it, which is the presentation
+// the developer asked for.
+bool widescreen_update();
+
+// Sets the window's width from its height and the shape the toggle asks for:
+// 4:3 for `Off` and 16:9 for `On`. Called once right after the
+// window is created, and again only when `widescreen_update` reports a mode
+// change. A manual resize by the player is left alone.
+//
+// A fullscreen window is never reshaped: RT64 owns its geometry then (a raw
+// `SetWindowPos` on Windows, `[NSWindow toggleFullScreen:]` on macOS) and SDL
+// does not see the size it set.
+void widescreen_fit_window(SDL_Window* window);
+
+// Ask for one window re-fit on the next `widescreen_update` call. The renderer
+// calls this from `update_config` when it has just left fullscreen, so the shape
+// is re-derived after the window is back under SDL's control and not before.
+// Safe to call from the renderer thread.
+void widescreen_request_refit();
+
+// The size a run should open its window at: 4:3 for `Off`, 16:9 otherwise.
+void widescreen_initial_window_size(int& width, int& height);
+
+}  // namespace ogre
+

@@ -1,0 +1,365 @@
+<rml>
+<head>
+    <title>Organize</title>
+    <link type="text/rcss" href="organize.rcss"/>
+</head>
+<body>
+<div id="screen" data-model="organize">
+
+    <div id="topbar" class="win">
+        <div class="brand">Organize</div>
+        <button class="tab" data-class-active="tab == 'formation'" data-event-click="set_tab('formation')">Formation</button>
+        <button class="tab" data-class-active="tab == 'characters'" data-event-click="set_tab('characters')">Change Class</button>
+        <button class="tab" data-class-active="tab == 'equipment'" data-event-click="set_tab('equipment')">Equipment</button>
+        <button class="tab" data-class-active="tab == 'items'" data-event-click="set_tab('items')">Items</button>
+        <button class="tab" data-class-active="tab == 'armory'" data-event-click="set_tab('armory')">Armory</button>
+        <div class="spacer"></div>
+        <div class="stat"><b>{{goth}}</b> Goth</div>
+        <div class="stat">Chaos <b>{{chaos_frame}}</b></div>
+        <button class="close" data-event-click="close()">Close</button>
+    </div>
+
+    <!-- Formation: each unit on a stepped board, back row highest -->
+    <div class="page" data-if="tab == 'formation'">
+        <div id="boards">
+            <div class="unit" data-for="u : units" data-class-selected="u.selected" data-event-click="select_unit(u.index)">
+                <div class="board">
+                    <div class="tier" data-for="row : u.rows" data-class-back="it_index == 0" data-class-middle="it_index == 1" data-class-front="it_index == 2">
+                        <div class="tread">
+                            <div class="tile" data-for="sq : row.squares" data-class-dark="sq.dark" data-class-picked="sq.selected" data-event-click="select_square(u.index, sq.index)">
+                                <img class="leadermark" data-if="sq.kind == 'leader'" src="marker:leader"/>
+                                <img class="sprite" data-if="sq.kind != 'empty'" data-class-leader="sq.kind == 'leader'" data-class-large="sq.kind == 'large'" data-attr-src="sq.sprite"/>
+                            </div>
+                        </div>
+                        <div class="riser"></div>
+                    </div>
+                </div>
+                <div class="plate">
+                    <span class="num">{{u.number}}</span>
+                    <span class="unitname">{{u.name}}</span>
+                    <span class="count">{{u.count}}</span>
+                </div>
+            </div>
+        </div>
+        <div id="formside">
+        <div id="formscroll">
+        <div id="pickinfo" class="win" data-if="picked_member.shown">
+            <div class="wintab">{{picked_member.row}} row</div>
+            <div class="pickhead">
+                <div class="face" data-if="!picked_member.soldier"><img class="portrait" data-attr-src="'portrait:' + picked_member.class_id"/></div>
+                <div class="celltext">
+                    <div class="mname">{{picked_member.name}}</div>
+                    <div class="mline">{{picked_member.cls}}<span data-if="!picked_member.soldier"> · Lv {{picked_member.level}}</span> · HP {{picked_member.hp}}/{{picked_member.hp_max}}</div>
+                    <div class="hpbar"><div class="hpfill" data-style-width="picked_member.hp_percent + '%'"></div></div>
+                </div>
+            </div>
+            <div class="mline" data-if="!picked_member.soldier">{{picked_member.stats}}</div>
+            <div class="attackrow" data-for="a : picked_member.attacks" data-class-current="a.current" data-class-open="a.open" data-event-click="open_attack(a.index)"><span class="arow">{{a.row}}</span>{{a.attack}}<div class="attackdetail" data-if="a.open">{{a.detail}}</div></div>
+            <div class="mline">Click an attack to see what it does.</div>
+        </div>
+        <div id="commands" class="win">
+            <div class="wintab">Unit {{unit.number}} · Commands</div>
+            <div class="cmdgrid">
+            <button class="command primary" data-event-click="command('Set Character')">Set Character</button>
+            <button class="command" data-event-click="command('Reposition')">Reposition</button>
+            <button class="command" data-event-click="command('Make Leader')">Make Leader</button>
+            <button class="command" data-event-click="command('Battle Strategy')">Battle Strategy</button>
+            <button class="command" data-class-primary="carry_open" data-event-click="command('Carry Item')">Carry Item</button>
+            <button class="command" data-event-click="command('Replenish')">Replenish</button>
+            <button class="command" data-event-click="command('Remove')">Remove</button>
+            <button class="command" data-class-primary="new_unit_mode" data-event-click="command('New Unit')">New Unit</button>
+            </div>
+            <div class="notice" data-if="notice != ''">{{notice}}</div>
+            <div class="carrypick strategypick" data-if="strategy_open">
+                <div class="label">Battle Strategy</div>
+                <div class="pick" data-for="s : strategies" data-class-current="s.current" data-event-click="set_strategy(s.index)">{{s.current ? '> ' : ''}}{{s.name}}</div>
+            </div>
+            <div class="carrypick" data-if="carry_open">
+                <div class="label">Stock (free)</div>
+                <div class="pick" data-for="s : stock" data-event-click="carry_item(s.index)"><img class="icon" data-attr-src="'icon:' + s.item"/>{{s.name}} · {{s.free}}</div>
+                <div class="infoline muted" data-if="stock.size == 0">No consumables free.</div>
+            </div>
+            <div class="editstate" data-if="editable">Editing the game's Organize screen: pick a square, then a square to move to.</div>
+            <div class="editstate" data-if="!editable">Read-only: open the game's Organize screen, then F3, to edit.</div>
+        </div>
+        <div id="unassigned" class="win">
+            <div class="wintab">Unassigned</div>
+            <div class="pick" data-if="soldier_reserve > 0" data-event-click="add_character(0)"><img class="icon" src="sprite:1:0"/>Soldiers · {{soldier_reserve}} in reserve</div>
+            <div class="pick" data-for="c : unassigned" data-event-click="add_character(c.record)">{{c.name}} · {{c.cls}} Lv {{c.level}}</div>
+            <div class="infoline muted" data-if="!(unassigned.size > 0 || soldier_reserve > 0)">Every character is in a unit.</div>
+        </div>
+        <div id="unitinfo" class="win">
+            <div class="wintab">Unit</div>
+            <div class="infotitle">{{unit.number}} · {{unit.name}}</div>
+            <div class="infoline">Members <b>{{unit.count}}</b></div>
+            <div class="infoline">Battle Strategy <b>{{unit.strategy}}</b></div>
+            <div class="infoline">Carried <b>{{unit.carry}}</b></div>
+            <div class="soldierexp" data-if="unit.has_soldiers">
+                <div class="infoline">Soldier EXP <b>{{unit.soldier_exp}} / 100</b> to a {{unit.promotes_to}}</div>
+                <div class="hpbar"><div class="expfill" data-style-width="unit.soldier_exp + '%'"></div></div>
+                <div class="mline">Needs a spare {{unit.promotes_to}} equipment set. Earned from battles won in missions.</div>
+            </div>
+            <div class="carried">
+                <span class="chip" data-for="it : unit.items" data-event-click="drop_item(it.index)"><img class="icon" data-attr-src="'icon:' + it.item"/>{{it.name}}</span>
+            </div>
+            <div class="membercard" data-for="m : unit.members">
+                <div class="face small"><img class="portrait" data-attr-src="'portrait:' + m.class_id"/></div>
+                <div class="celltext">
+                    <div class="mname">{{m.name}}</div>
+                    <div class="mline">{{m.cls}}<span data-if="!m.soldier"> · Lv {{m.level}} · HP {{m.hp}}/{{m.hp_max}}</span></div>
+                    <div class="hpbar" data-if="!m.soldier"><div class="hpfill" data-style-width="m.hp_percent + '%'"></div></div>
+                </div>
+            </div>
+        </div>
+        </div>
+        </div>
+    </div>
+
+    <!-- Change Class: the character, the classes it can take, and what each needs -->
+    <div class="page" data-if="tab == 'characters' &amp;&amp; class_list_mode">
+        <div id="roster" class="win">
+            <div class="rosterhead">
+                <span class="wintab static">Classes</span>
+                <button class="sort active" data-event-click="toggle_class_list()">Class List</button>
+            </div>
+            <div id="cells">
+                <div class="cell" data-for="k : known_classes" data-class-selected="k.selected" data-event-click="pick_list_class(k.id)">
+                    <div class="optile"><img class="sprite small" data-attr-src="'sprite:' + k.class_id"/></div>
+                    <div class="celltext"><div class="cellname">{{k.name}}</div></div>
+                </div>
+                <div class="infoline muted" data-if="known_classes.size == 0">No classes known yet.</div>
+            </div>
+        </div>
+        <div id="gearside">
+            <div class="win">
+                <div class="wintab">Who can take this class</div>
+                <div class="itemrow" data-for="h : class_holders" data-class-dim="h.kind == 'locked'">
+                    <img class="portrait" data-attr-src="'portrait:' + h.class_id"/>
+                    <span class="iname">{{h.name}}</span><span class="icat">{{h.status}}</span>
+                </div>
+                <div class="infoline muted" data-if="!editable">Read only: open Organize from the map's R menu to see who qualifies.</div>
+                <div class="infoline muted" data-if="editable &amp;&amp; class_holders.size == 0">Reading the game's checks...</div>
+                <div class="mline">The checks are the game's own. Change a character's class from the character list.</div>
+            </div>
+        </div>
+    </div>
+
+    <div class="page" data-if="tab == 'characters' &amp;&amp; !class_list_mode">
+        <div id="roster" class="win">
+            <div class="rosterhead">
+                <span class="wintab static">Characters</span>
+                <button class="sort" data-event-click="cycle_sort()">Sort: {{sort}}</button>
+                <button class="sort" data-event-click="toggle_class_list()">Class List</button>
+            </div>
+            <div id="cells">
+                <div class="cell" data-for="c : characters" data-class-selected="c.selected" data-event-click="select_character(c.record)">
+                    <div class="face" data-style-background-color="c.colour"><img class="portrait" data-attr-src="'portrait:' + c.class_id"/></div>
+                    <div class="celltext">
+                        <div class="cellname">{{c.name}}</div>
+                        <div class="cellclass">{{c.cls}} · Lv {{c.level}}</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div id="scene">
+            <div class="scenetop">
+                <div id="stats" class="win">
+                    <div class="wintab">Stats</div>
+                    <div class="statrow"><span class="sname">HP</span><div class="sbar"><div class="sfill hp" data-style-width="character.hp_percent + '%'"></div></div><b>{{character.hp}}</b></div>
+                    <div class="statrow"><span class="sname">STR</span><div class="sbar"><div class="sfill" data-style-width="character.str / 2.55 + '%'"></div></div><b>{{character.str}}</b></div>
+                    <div class="statrow"><span class="sname">VIT</span><div class="sbar"><div class="sfill" data-style-width="character.vit / 2.55 + '%'"></div></div><b>{{character.vit}}</b></div>
+                    <div class="statrow"><span class="sname">INT</span><div class="sbar"><div class="sfill" data-style-width="character.intel / 2.55 + '%'"></div></div><b>{{character.intel}}</b></div>
+                    <div class="statrow"><span class="sname">MEN</span><div class="sbar"><div class="sfill" data-style-width="character.men / 2.55 + '%'"></div></div><b>{{character.men}}</b></div>
+                    <div class="statrow"><span class="sname">AGI</span><div class="sbar"><div class="sfill" data-style-width="character.agi / 2.55 + '%'"></div></div><b>{{character.agi}}</b></div>
+                    <div class="statrow"><span class="sname">DEX</span><div class="sbar"><div class="sfill" data-style-width="character.dex / 2.55 + '%'"></div></div><b>{{character.dex}}</b></div>
+                </div>
+                <div id="classwin" class="win">
+                    <div class="wintab">Class</div>
+                    <div class="classhead">
+                    <div class="face big"><img class="portrait" data-attr-src="'portrait:' + character.class_id"/></div>
+                    <div class="celltext">
+                    <div class="classline">
+                        <span class="classname">{{picked.name}}</span>
+                        <span class="spacer"></span>
+                        <span class="classcount">{{picked_number}} / {{class_count}}</span>
+                    </div>
+                    <div class="infoline">{{character.name}} · {{character.cls}} · Lv {{character.level}} · Unit {{character.unit}}</div>
+                    </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="scenemid">
+                <div id="wardrobe">
+                    <div class="wardrobe-top"></div>
+                    <div class="wardrobe-body">
+                        <img class="sprite big" data-attr-src="'sprite:' + picked.class_id"/>
+                    </div>
+                    <div class="wardrobe-door"></div>
+                </div>
+                <div id="classes">
+                    <div class="option" data-for="k : classes" data-class-selected="k.selected" data-class-locked="k.kind == 'locked'" data-class-ready="k.kind == 'ready'" data-event-click="select_class(k.index)">
+                        <span class="hand">{{k.selected ? '>' : ''}}</span>
+                        <div class="optile"><img class="sprite small" data-attr-src="'sprite:' + k.class_id"/></div>
+                        <span class="optname">{{k.name}}</span>
+                        <span class="badge" data-class-current="k.kind == 'current'">{{k.status}}</span>
+                    </div>
+                </div>
+                <div id="sidecol">
+                    <div class="win price">
+                        <div class="wintab">War Funds</div>
+                        <div class="mid-number">{{goth}} <span class="suffix">Goth</span></div>
+                    </div>
+                </div>
+            </div>
+
+            <div id="prompt" class="win">
+                <div class="wintab">Class</div>
+                <div class="prompttext">{{picked.reason}}</div>
+                <div class="needs" data-if="picked.needs.size > 0">
+                    <div class="need" data-for="n : picked.needs" data-class-short="n.shortfall">
+                        <span class="needname">{{n.name}}</span>
+                        <div class="needbar">
+                            <div class="needfill" data-style-width="n.fill + '%'"></div>
+                            <div class="needmark" data-if="n.need > 0" data-style-left="n.mark + '%'"></div>
+                        </div>
+                        <span class="needval">{{n.have}}{{n.need > 0 ? ' / ' + n.need : ''}}</span>
+                    </div>
+                </div>
+                <div class="cmdgrid" data-if="picked.kind == 'ready'">
+                    <button class="command primary" data-event-click="change_class()">{{picked.cost > 0 ? 'Buy gear (' + picked.cost + ' Goth) and Change Class' : 'Change Class'}}</button>
+                </div>
+                <div class="notice" data-if="notice != ''">{{notice}}</div>
+                <div class="promptnote" data-if="!editable">Read only: open Organize from the map's R menu (this view opens over it) to see every class with its requirements and to change class.</div>
+                <div class="promptnote" data-if="editable">The list and the checks are the game's own, with no alignment requirement.</div>
+            </div>
+        </div>
+    </div>
+
+    <div class="page" data-if="tab == 'equipment'">
+        <div id="roster" class="win">
+            <div class="rosterhead">
+                <span class="wintab static">Characters</span>
+                <button class="sort" data-event-click="cycle_sort()">Sort: {{sort}}</button>
+            </div>
+            <div id="cells">
+                <div class="cell" data-for="c : characters" data-class-selected="c.selected" data-event-click="select_character(c.record)">
+                    <div class="face" data-style-background-color="c.colour"><img class="portrait" data-attr-src="'portrait:' + c.class_id"/></div>
+                    <div class="celltext">
+                        <div class="cellname">{{c.name}}</div>
+                        <div class="cellclass">{{c.cls}} · Lv {{c.level}}</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div id="gearside">
+            <div id="loadout" class="win">
+                <div class="wintab">Equipment</div>
+                <div class="classhead">
+                    <div class="face big"><img class="portrait" data-attr-src="'portrait:' + character.class_id"/></div>
+                    <div class="celltext">
+                        <div class="mname">{{character.name}}</div>
+                        <div class="infoline">{{character.cls}} · Lv {{character.level}} · Unit {{character.unit}}</div>
+                    </div>
+                </div>
+                <div class="gearslot" data-for="g : gear" data-class-open="g.open" data-class-locked="g.locked" data-event-click="open_slot(g.slot)">
+                    <img class="icon" data-attr-src="'equip:' + g.item"/>
+                    <span class="gearname">{{g.name}}</span>
+                    <span class="gearcat">{{g.category}}{{g.basic ? ' · Basic' : ''}}{{g.locked ? ' · Fixed' : ''}}</span>
+                </div>
+                <div class="gearchoices" data-if="open_slot >= 0">
+                    <div class="label">Choose an item</div>
+                    <div class="pick" data-for="c : gear_choices" data-class-current="c.current" data-event-click="equip_item(c.item)">{{c.current ? '> ' : ''}}{{c.name}}<span data-if="c.item != 0"> · {{c.free}} free</span></div>
+                    <div class="infoline muted" data-if="gear_choices.size == 0">No other items of this kind are owned.</div>
+                </div>
+                <div class="cmdgrid">
+                    <button class="command" data-event-click="basic_equipment()">Basic Equipment</button>
+                </div>
+                <div class="notice" data-if="notice != ''">{{notice}}</div>
+                <div class="mline">Click a slot to change it. A slot takes items of its own kind; the class's Basic Equipment is always available.</div>
+            </div>
+            <div id="charcmds" class="win">
+                <div class="wintab">Character</div>
+                <div class="renamerow">
+                    <input type="text" class="namefield" maxlength="15" data-value="rename_text" data-event-click="open_keyboard(0)"/>
+                    <button class="command" data-event-click="open_keyboard(1)">Keyboard</button>
+                    <button class="command" data-event-click="rename_character()">Rename</button>
+                </div>
+                <div class="osk" data-if="keyboard_open">
+                    <div class="oskkeys"><button class="key" data-for="k : keyboard_keys" data-event-click="type_key(it_index)">{{k}}</button></div>
+                    <div class="oskkeys">
+                        <button class="key wide" data-event-click="keyboard_special('shift')">{{keyboard_upper ? 'abc' : 'ABC'}}</button>
+                        <button class="key wide" data-event-click="keyboard_special('space')">Space</button>
+                        <button class="key wide" data-event-click="keyboard_special('delete')">Delete</button>
+                        <button class="key wide" data-event-click="keyboard_special('close')">Close</button>
+                        <button class="key wide primary" data-event-click="keyboard_special('done')">Rename</button>
+                    </div>
+                    <div class="mline">{{keyboard_help}}</div>
+                </div>
+                <div class="cmdgrid">
+                    <button class="command" data-class-primary="discharge_confirm" data-event-click="discharge()">{{discharge_confirm ? 'Confirm Discharge' : 'Discharge'}}</button>
+                </div>
+                <div class="mline">Named characters keep their names and do not leave the army. Discharge returns the character's equipment to stock.</div>
+            </div>
+        </div>
+    </div>
+
+    <div class="page" data-if="tab == 'items'">
+        <div id="itemlist" class="win">
+            <div class="rosterhead">
+                <span class="wintab static">Items</span>
+                <button class="sort" data-class-active="item_filter == 'equipment'" data-event-click="set_item_filter('equipment')">Equipment</button>
+                <button class="sort" data-class-active="item_filter == 'consumables'" data-event-click="set_item_filter('consumables')">Consumables</button>
+                <span class="spacer"></span>
+                <span class="muted">Sort</span>
+                <button class="sort" data-class-active="item_sort == 'kind'" data-event-click="set_item_sort('kind')">Kind</button>
+                <button class="sort" data-class-active="item_sort == 'name'" data-event-click="set_item_sort('name')">Name</button>
+                <button class="sort" data-class-active="item_sort == 'owned'" data-event-click="set_item_sort('owned')">Count</button>
+                <button class="sort" data-class-active="item_sort == 'price'" data-event-click="set_item_sort('price')">Value</button>
+                <span class="goth">{{goth}} Goth</span>
+            </div>
+            <div class="itemhead"><span class="iname">Item</span><span class="icat">Kind</span><span class="inum">Owned</span><span class="inum">In use</span><span class="isell">Sells for</span></div>
+            <div id="itemscroll">
+                <div class="itemrow" data-for="e : owned_items">
+                    <img class="icon" data-attr-src="(e.list == 1 ? 'icon:' : 'equip:') + e.item"/>
+                    <span class="iname">{{e.name}}</span><span class="icat">{{e.category}}</span>
+                    <span class="inum">{{e.owned}}</span><span class="inum">{{e.in_use}}</span>
+                    <span class="isell">{{e.sell > 0 ? e.sell + ' Goth' : '-'}}</span>
+                    <button class="command small" data-if="e.sell > 0 &amp;&amp; e.owned > e.in_use" data-event-click="sell_item(e.list, e.index)">Sell 1</button>
+                    <button class="command small" data-if="e.in_use > 0" data-event-click="unequip_all(e.list, e.item)">Unequip All</button>
+                </div>
+                <div class="infoline muted" data-if="owned_items.size == 0">Nothing owned here.</div>
+            </div>
+            <div class="notice" data-if="notice != ''">{{notice}}</div>
+            <div class="mline">Items in use are equipped by a character or carried by a unit and cannot be sold. Selling pays a quarter of the price.</div>
+        </div>
+    </div>
+
+    <div class="page" data-if="tab == 'armory'">
+        <div id="armorylist" class="win">
+            <div class="rosterhead">
+                <span class="wintab static">Armory · Basic Equipment</span>
+                <span class="spacer"></span>
+                <span class="goth">{{goth}} Goth</span>
+            </div>
+            <div id="armoryscroll">
+                <div class="setrow" data-for="a : armory" data-class-dim="!a.affordable">
+                    <div class="optile"><img class="sprite small" data-attr-src="'sprite:' + a.class_id"/></div>
+                    <div class="celltext">
+                        <div class="cellname">{{a.name}} <span class="muted">· {{a.members}} in the army</span></div>
+                        <div class="cellclass">{{a.items}}</div>
+                    </div>
+                    <span class="isell">{{a.price}} Goth</span>
+                    <button class="command small" data-event-click="buy_set(a.class_id)">Buy set</button>
+                </div>
+            </div>
+            <div class="notice" data-if="notice != ''">{{notice}}</div>
+            <div class="mline">Buys one Basic Equipment set of a class, as the game's Buy Basic Equipment does. Other gear is sold in town shops.</div>
+        </div>
+    </div>
+
+</div>
+</body>
+</rml>
+

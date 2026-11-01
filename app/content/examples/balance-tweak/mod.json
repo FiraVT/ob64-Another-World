@@ -1,0 +1,8 @@
+{
+  "_comment": "An example mod made of one content pack. Copy this folder into user-content/ to try it. docs/anotherworld/design-content-database.md lists the fields.",
+  "id": "balance-tweak",
+  "name": "Balance Tweak",
+  "version": "1.0",
+  "author": "OB64: Another World",
+  "description": "Raises the Short Sword's STR and lowers its price, and gives Wizards more INT. The simplest kind of mod: a few named fields in one JSON file."
+}

@@ -1,0 +1,36 @@
+<rml>
+<head>
+    <title>Alerts</title>
+    <style>
+        body {
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            font-family: LatoLatin;
+        }
+        #alerts {
+            position: absolute;
+            right: 16dp;
+            top: 16dp;
+            width: 360dp;
+            pointer-events: none;
+        }
+        .alert {
+            display: block;
+            margin-bottom: 6dp;
+            padding: 8dp 12dp;
+            font-size: 15dp;
+            color: #F3E6B0;
+            background-color: #18150EE6;
+            border-left: 5dp #8C7442;
+            border-radius: 6dp;
+        }
+        .threat { border-left-color: #C25A12; }
+        .good { border-left-color: #2F6FB5; }
+    </style>
+</head>
+<body>
+    <div id="alerts"></div>
+</body>
+</rml>
+

@@ -1,0 +1,286 @@
+<rml>
+<head>
+    <title>Field</title>
+    <!-- The mission field overlay (app/features/field_view.cpp), laid out after the
+         battlefield mockup (docs/anotherworld/design-field-controls.md section 7): a top bar,
+         the army strip on the left, markers and path lines on the field, the
+         move-to card, and the selection bar with the command grid. Panel sizes
+         are dp (a 1280x720 canvas); markers are window pixels. -->
+    <style>
+        body {
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            font-family: LatoLatin;
+            color: #2B2414;
+        }
+
+        /* Top bar */
+        #top {
+            position: absolute;
+            left: 0;
+            right: 0;
+            top: 0;
+            height: 34dp;
+            padding: 0 12dp;
+            background-color: #1F1C14EE;
+            color: #EFE6CC;
+            font-size: 14dp;
+            line-height: 34dp;
+            display: flex;
+            align-items: center;
+        }
+        .clock { margin-right: 18dp; font-weight: bold; }
+        .label { margin-right: 8dp; }
+        .chaos { width: 110dp; height: 7dp; background-color: #4A4433; border-radius: 4dp; margin-right: 8dp; }
+        .chaosfill { height: 7dp; background-color: #D9B44A; border-radius: 4dp; }
+        .chaosval { font-weight: bold; margin-right: 12dp; }
+        .spacer { flex: 1; }
+        .goth { font-weight: bold; margin-right: 12dp; }
+        .topbtn {
+            height: 24dp;
+            line-height: 24dp;
+            padding: 0 10dp;
+            margin-left: 8dp;
+            border: 1dp #8C7A4A;
+            border-radius: 5dp;
+            font-weight: bold;
+            color: #EFE6CC;
+        }
+
+        /* Army strip */
+        #strip { position: absolute; left: 8dp; top: 44dp; bottom: 8dp; width: 64dp; overflow-y: hidden; }
+        #strip.short { bottom: 132dp; }
+        .tile {
+            display: block;
+            margin-bottom: 5dp;
+            padding: 4dp 2dp;
+            background-color: #EFE6CCF0;
+            border: 2dp #B7A77A;
+            border-radius: 7dp;
+            text-align: center;
+        }
+        .tile.picked { border-color: #3DAA62; }
+        .tile.waiting { background-color: #CFC6A8D0; border-color: #A69C80; }
+        .tile.waiting .tileface { opacity: 0.6; }
+        .divider { display: block; margin: 6dp 0 4dp 0; font-size: 9dp; font-weight: bold; color: #EFE6CC; text-align: center; font-effect: outline(1px #1F1C14); }
+        .lowfill { background-color: #B0301C; }
+        .hptext { display: block; font-size: 10dp; color: #4A3F24; }
+        .itemwho { font-size: 10dp; color: #6D6236; margin-left: 6dp; }
+        .tileface { position: relative; width: 40dp; height: 48dp; margin: 0 auto 2dp auto; border-radius: 5dp; }
+        .portrait { width: 100%; height: 100%; }
+        .tileface .chip { position: absolute; right: -6dp; bottom: -4dp; margin: 0; border: 1dp #EFE6CC; }
+        .chip {
+            display: block;
+            width: 20dp;
+            height: 20dp;
+            line-height: 20dp;
+            margin: 0 auto 2dp auto;
+            border-radius: 5dp;
+            color: #FFFFFF;
+            font-weight: bold;
+            font-size: 13dp;
+        }
+        .status { display: block; font-size: 9dp; font-weight: bold; color: #2D3F73; }
+        .status.lowhp { color: #A8502E; }
+        .align { font-size: 10dp; font-weight: bold; }
+        .high { color: #2D4FA0; }
+        .mid { color: #4A3F24; }
+        .low { color: #A8502E; }
+
+        /* Field markers */
+        #marks { position: absolute; left: 0; top: 0; width: 100%; height: 100%; }
+        .mark {
+            position: absolute;
+            width: 32px;
+            height: 32px;
+            line-height: 28px;
+            border-width: 2px;
+            border-color: #EFE6CC;
+            border-radius: 16px;
+            color: #FFFFFF;
+            font-size: 15px;
+            font-weight: bold;
+            text-align: center;
+        }
+        .mark.picked { border-width: 3px; border-color: #7FE0A0; }
+        .mark.enemy { background-color: #1F1C14; border-color: #EFE6CC; }
+        .mark.boss { border-width: 3px; border-color: #E8B931; color: #E8B931; }
+        .bosstag { position: absolute; width: 100px; text-align: center; font-size: 11px; font-weight: bold;
+                   color: #E8B931; background-color: #1F1C14CC; border-radius: 4px; padding: 1px 0px; }
+        .pickbadge {
+            position: absolute;
+            width: 16px;
+            height: 16px;
+            line-height: 15px;
+            border-radius: 8px;
+            background-color: #FFFFFF;
+            border: 1px #3DAA62;
+            color: #1F1C14;
+            font-size: 10px;
+            font-weight: bold;
+            text-align: center;
+        }
+        .place { position: absolute; width: 22px; height: 22px; border-width: 2px; border-radius: 3px; }
+        .held { border-color: #EFE6CC; background-color: #3B4BA8; }
+        .foe { border-color: #EFE6CC; background-color: #A8502E; }
+        .free { border-color: #1F1C14; background-color: #D8D2BE; }
+        .placename {
+            position: absolute;
+            width: 120px;
+            text-align: center;
+            font-size: 12px;
+            font-weight: bold;
+            color: #FFFFFF;
+            font-effect: outline(2px #1F1C14);
+        }
+        .items {
+            position: absolute;
+            right: 10dp;
+            bottom: 128dp;
+            width: 300dp;
+            padding: 8dp 10dp;
+            background-color: #EFE6CCF5;
+            border: 2dp #B7A77A;
+            border-radius: 8dp;
+            font-size: 12dp;
+        }
+        .items.dispatch { right: auto; left: 76dp; top: 44dp; bottom: auto; }
+        .itemrow .chip { display: inline-block; width: 20dp; height: 20dp; line-height: 20dp; margin: 0 8dp 0 0; font-size: 12dp; text-align: center; }
+        .itemstitle { display: block; font-size: 15dp; font-weight: bold; margin-bottom: 4dp; }
+        .itemrow { display: flex; padding: 3dp 0; border-top: 1dp #D8CCA8; }
+        .itemnum { width: 20dp; color: #6D6236; }
+        .itemname { flex: 1; font-weight: bold; }
+        .itemcount { width: 40dp; text-align: right; }
+        .btn { display: inline-block; margin-top: 6dp; padding: 4dp 10dp; background-color: #1F1C14; color: #EFE6CC; border-radius: 5dp; font-weight: bold; }
+        .itemsnote { display: block; margin-top: 6dp; color: #6D6236; font-size: 11dp; }
+        .dot { position: absolute; width: 6px; height: 6px; border-radius: 3px; background-color: #EFE6CC66; }
+        .dot.lit { background-color: #F2E3A0; }
+        .box { position: absolute; border-width: 2px; border-color: #7FE0A0; background-color: #2E9E5720; }
+
+        /* Move-to card */
+        .movecard {
+            position: absolute;
+            width: 300dp;
+            padding: 10dp 12dp;
+            background-color: #EFE6CCF5;
+            border: 2dp #B7A77A;
+            border-radius: 8dp;
+            font-size: 12dp;
+        }
+        .movetitle { display: block; font-size: 15dp; font-weight: bold; margin-bottom: 4dp; }
+        .badge { margin-left: 8dp; padding: 1dp 6dp; border-radius: 8dp; font-size: 11dp; background-color: #DCE3F2; }
+        .badge.bad { background-color: #F2D9CC; }
+        .badge.risk { background-color: #F2E6C4; }
+        .movetext { display: block; color: #4A3F24; margin-bottom: 6dp; }
+        .moverow { display: flex; padding: 3dp 0; border-top: 1dp #D8CCA8; }
+        .ord { width: 30dp; color: #6D6236; }
+        .who { flex: 1; font-weight: bold; }
+        .moverow .align { width: 44dp; }
+        .warn { display: block; margin-top: 6dp; padding: 5dp 7dp; background-color: #F6E1D6; color: #8A3A08; border-radius: 5dp; }
+        .good { color: #2D4FA0; }
+        .risk { color: #7A5A12; }
+        .bad { color: #A8502E; font-weight: bold; }
+
+        /* Selection bar */
+        #bar {
+            position: absolute;
+            left: 8dp;
+            right: 8dp;
+            bottom: 8dp;
+            height: 112dp;
+            padding: 8dp;
+            background-color: #EFE6CCF2;
+            border: 2dp #B7A77A;
+            border-radius: 10dp;
+            display: flex;
+            align-items: center;
+        }
+        #bar.empty { display: none; }
+        .count { width: 96dp; }
+        .countnum { font-size: 26dp; font-weight: bold; }
+        .countword { font-size: 12dp; }
+        .countkey { font-size: 10dp; color: #6D6236; }
+        .card {
+            display: flex;
+            width: 214dp;
+            height: 92dp;
+            margin-right: 8dp;
+            padding: 6dp;
+            border: 2dp #3DAA62;
+            border-radius: 8dp;
+            background-color: #F7F1DE;
+        }
+        .face {
+            width: 40dp;
+            height: 48dp;
+            line-height: 40dp;
+            border-radius: 5dp;
+            color: #FFFFFF;
+            font-size: 16dp;
+            font-weight: bold;
+            text-align: center;
+            margin-right: 6dp;
+        }
+        .cardtext { flex: 1; }
+        .cardtitle { display: block; font-size: 12dp; font-weight: bold; }
+        .x { float: right; color: #6D6236; }
+        .cardsub { display: block; font-size: 11dp; color: #4A3F24; }
+        .activity { display: block; font-size: 11dp; font-weight: bold; color: #2D3F73; }
+        .carry { display: block; height: 18dp; margin-top: 2dp; }
+        .carryitem { display: inline-block; position: relative; width: 18dp; height: 18dp; margin-right: 3dp; }
+        .icon { width: 18dp; height: 18dp; }
+        .carrycount { position: absolute; right: -3dp; bottom: -3dp; font-size: 9dp; font-weight: bold; color: #FFFFFF; font-effect: outline(1px #1F1C14); }
+        .carrynone { font-size: 10dp; color: #8C7A4A; }
+        .hp { height: 5dp; margin: 3dp 0; background-color: #CBBF98; border-radius: 3dp; }
+        .hpfill { height: 5dp; background-color: #3D7A3A; border-radius: 3dp; }
+        .cmds { flex: 1; display: flex; flex-wrap: wrap; justify-content: flex-end; }
+        .cmd {
+            width: 84dp;
+            height: 38dp;
+            margin: 2dp;
+            padding-top: 3dp;
+            border: 1dp #B7A77A;
+            border-radius: 6dp;
+            background-color: #F7F1DE;
+            text-align: center;
+        }
+        #cmd-move { background-color: #1F1C14; color: #EFE6CC; }
+        .cmd.off { color: #A69C80; }
+        .cmdname { display: block; font-size: 12dp; font-weight: bold; }
+        .cmdkey { display: block; font-size: 9dp; }
+
+        /* Prompts (input_map.hpp key_prompt_image / pad_prompt_image): Kenney's
+           Input Prompts, white art tinted to the text it sits in. */
+        .glyph { width: 15dp; height: 15dp; vertical-align: middle; image-color: #2B2414; }
+        #top .glyph { image-color: #EFE6CC; }
+        .count .glyph { width: 12dp; height: 12dp; image-color: #6D6236; }
+        /* The pad: the selection circle, the command menu's focus and the
+           controls line. */
+        .ring { position: absolute; border-width: 3px; border-color: #7FE0A0; background-color: #2E9E5720; }
+        .padfocus { border-width: 3dp; border-color: #3DAA62; }
+        #padhelp {
+            position: absolute;
+            left: 80dp;
+            bottom: 8dp;
+            padding: 4dp 10dp;
+            background-color: #1F1C14E0;
+            color: #EFE6CC;
+            border-radius: 6dp;
+            font-size: 12dp;
+        }
+        #padhelp.raised { bottom: 132dp; }
+        #padhelp.empty { display: none; }
+        #padhelp span { margin-right: 14dp; }
+        #padhelp .glyph { width: 18dp; height: 18dp; image-color: #EFE6CC; }
+    </style>
+</head>
+<body>
+    <div id="marks"></div>
+    <div id="top"></div>
+    <div id="strip"></div>
+    <div id="bar" class="empty"></div>
+    <div id="padhelp" class="empty"></div>
+</body>
+</rml>
+

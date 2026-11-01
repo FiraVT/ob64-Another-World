@@ -1,0 +1,9 @@
+{
+  "_comment": "Example Mod sets the Soldier's name, HP and STR; this file adds VIT to the same record. The two do not conflict, because they change different fields.",
+  "classes": {
+    "1": {
+      "_name": "Soldier",
+      "vit_base": 80
+    }
+  }
+}

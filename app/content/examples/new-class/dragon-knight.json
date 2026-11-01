@@ -1,0 +1,32 @@
+{
+  "_comment": "A new class: a key instead of an id, and the class it starts as. The port gives it an id from 172 up and keeps it in saves/class-ids.json. It fights like a Centurion with more STR and VIT. The change_class block makes Change Class offer it: family_of puts it in that class's line (Fighter 2 and Centurion 34 share one), and the requirements are minimum STR, VIT, INT, MEN, AGI, DEX and an alignment range, 255 for none. It keeps the Fighter's basic equipment (Short Sword, Chain Mail, Round Shield, Iron Helm), so a Fighter changes without buying gear. The art block names its own images in art/ (art/README.md says how to make them). README.md explains every file.",
+  "classes": {
+    "new-class-example.dragon-knight": {
+      "copy_of": 34,
+      "name": "Dragon Knight",
+      "str_base": 120,
+      "vit_base": 110,
+      "equipment_0": 1,
+      "equipment_1": 159,
+      "equipment_2": 135,
+      "equipment_3": 220,
+      "change_class": {
+        "family_of": 34,
+        "str": 255,
+        "vit": 255,
+        "int": 255,
+        "men": 255,
+        "agi": 255,
+        "dex": 255,
+        "alignment_min": 255,
+        "alignment_max": 255
+      },
+      "art": {
+        "portrait": "art/portrait.png",
+        "figure_front": "art/figure-front.png",
+        "figure_back": "art/figure-back.png",
+        "battle": "art/battle"
+      }
+    }
+  }
+}

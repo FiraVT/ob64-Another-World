@@ -1,0 +1,12 @@
+{
+  "_comment": "An example mod. Copy this folder into user-content/ to try it. docs/anotherworld/design-mods.md describes mod.json.",
+  "id": "example-mod",
+  "name": "Example Mod",
+  "version": "1.0",
+  "author": "OB64: Another World",
+  "url": "https://github.com/FiraVT/ob64-Another-World",
+  "description": "Renames Soldier to Iron Soldier with more HP and STR, and logs a line from a script. A small example of a pack and a script in one mod.",
+  "priority": 0,
+  "requires": [],
+  "enabled": true
+}

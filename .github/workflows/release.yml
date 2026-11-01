@@ -1,0 +1,410 @@
+# Build a release for every platform and attach it to a GitHub Release.
+#
+# Triggered by pushing a version tag:
+#
+#     git tag v0.1.0 && git push origin v0.1.0
+#
+# It publishes a release with one archive per platform attached, so the
+# downloads appear on the repository's Releases page. Run it by hand
+# (`workflow_dispatch`) with `draft: true` to get a draft you publish yourself.
+# One asset per platform: `.tar.gz` on macOS and Linux, `.zip` on Windows.
+#
+# ---------------------------------------------------------------------------
+# WHERE THE RECOMPILED GAME CODE COMES FROM
+# ---------------------------------------------------------------------------
+# This repository deliberately does NOT contain the recompiler's output
+# (RecompiledFuncs/, Bank*Funcs/, RspFuncs/, app/src/bank_funcs.inc are
+# gitignored). That is ~62 MB of C generated from a ROM, and generating it needs
+# the ROM. There are two ways to give a runner that code:
+#
+#   1. Self-hosted runner (the default). The matrix `runs-on` uses the
+#      self-hosted labels, and the machine must already have run
+#      `make recomp && make bank-recomp` against a ROM.
+#
+#   2. GitHub-hosted runner. Set this repository's Actions variable
+#      `OGRE_DATA_REPO` to the slug of the private data repository, and add the
+#      secret `OGRE_DATA_TOKEN` (a fine-grained token with `Contents: Read` on
+#      that repository). Every matrix job then switches to `matrix.hosted`,
+#      clones the data repository and unpacks `files.tar.gz` from it.
+#
+# The archive for path 2 is produced on a machine with the ROM by
+# `tools/data-bundle.sh`; docs/guides/app-build.md -> "Releases (GitHub Actions)"
+# documents the contract, and history-archive:docs/history/handoffs/HANDOFF-2026-09-19-session89.md the reason.
+#
+# Either way `tools/release-build.sh` checks that the generated code is
+# present, and tells you exactly what is missing. The package carries no code
+# mods (docs/anotherworld/DECISIONS.md 2026-11-01).
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag to build and attach to (e.g. v0.1.0)'
+        required: true
+        type: string
+      draft:
+        # Default true: `make release` dispatches this workflow, and a release
+        # that a person has not looked at should not become the Latest
+        # download. Pass draft=false for a published release.
+        description: 'Create the release as a draft instead of publishing it'
+        type: boolean
+        default: true
+      platforms:
+        description: 'Which platforms to build. `windows` is the fast iteration path (about 8 minutes instead of 30).'
+        type: choice
+        options:
+          - all
+          - windows
+          - linux
+          - macos
+        default: all
+
+permissions:
+  contents: write
+
+jobs:
+  # The build matrix is data, so a workflow_dispatch can ask for one platform.
+  # A tag push always builds every platform: the `platforms` input only exists on
+  # workflow_dispatch, and the gate below makes that explicit rather than relying
+  # on an empty input.
+  plan:
+    name: Plan
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.matrix.outputs.matrix }}
+    steps:
+      - id: matrix
+        env:
+          PLATFORMS: ${{ github.event_name == 'workflow_dispatch' && inputs.platforms || 'all' }}
+        run: |
+          python3 - <<'PY' >> "$GITHUB_OUTPUT"
+          import json, os
+          entries = [
+              {
+                  "name": "macOS (Apple Silicon)",
+                  "os": "macos",
+                  "hosted": "macos-14",
+                  "fallback": '["self-hosted","macOS","ARM64"]',
+                  "archive": "OB64-AnotherWorld-macos-arm64.tar.gz",
+                  "flavour": "tar.gz",
+                  "cmake_args": "",
+                  "dist_dir": "dist-macos",
+              },
+              {
+                  "name": "Linux (x86-64)",
+                  "os": "linux",
+                  "hosted": "ubuntu-24.04",
+                  "fallback": '["self-hosted","Linux","X64"]',
+                  "archive": "OB64-AnotherWorld-linux-x86_64.tar.gz",
+                  "flavour": "tar.gz",
+                  "cmake_args": "",
+                  "dist_dir": "dist-linux",
+              },
+              {
+                  "name": "Windows (x86-64)",
+                  "os": "windows",
+                  "hosted": "windows-2022",
+                  "fallback": '["self-hosted","Windows","X64"]',
+                  "archive": "OB64-AnotherWorld-windows-x86_64.zip",
+                  "flavour": "zip",
+                  # cl.exe rejects the GCC/Clang spellings the app, the runtime and
+                  # RT64 use for their flags (cl : error D8021), so build with
+                  # clang-cl in an MSVC environment, the configuration
+                  # Zelda64Recomp uses.
+                  "cmake_args": "-G Ninja -DCMAKE_C_COMPILER=clang-cl -DCMAKE_CXX_COMPILER=clang-cl",
+                  "dist_dir": "dist-windows",
+              },
+          ]
+          want = os.environ.get("PLATFORMS") or "all"
+          picked = entries if want == "all" else [e for e in entries if e["os"] == want]
+          if not picked:
+              raise SystemExit(f"no platform matches {want!r}")
+          names = ", ".join(e["name"] for e in picked)
+          with open(os.environ["GITHUB_STEP_SUMMARY"], "a") as summary:
+              summary.write(f"Building: {names}\n")
+          # stdout is $GITHUB_OUTPUT here, so the notice goes to stderr.
+          import sys
+          print(f"::notice::building {names}", file=sys.stderr)
+          print("matrix=" + json.dumps({"include": picked}))
+          PY
+
+  build:
+    name: Build ${{ matrix.name }}
+    needs: plan
+    # Empty OGRE_DATA_REPO -> the self-hosted labels, where the generated code
+    # already exists. Set -> the hosted label, plus the private data repository
+    # that supplies the generated code. `vars` is one of the contexts GitHub
+    # allows in `runs-on`.
+    runs-on: ${{ vars.OGRE_DATA_REPO != '' && matrix.hosted || fromJSON(matrix.fallback) }}
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          fetch-depth: 0
+
+      # Fail with the missing name rather than a checkout error, when the
+      # variable is set and the token is not.
+      - name: Check the data repository configuration
+        if: vars.OGRE_DATA_REPO != ''
+        shell: bash
+        env:
+          TOKEN: ${{ secrets.OGRE_DATA_TOKEN }}
+        run: |
+          set -e
+          if [ -z "$TOKEN" ]; then
+            echo "::error::OGRE_DATA_REPO is set to '${{ vars.OGRE_DATA_REPO }}' but the OGRE_DATA_TOKEN secret is empty or missing. Add a fine-grained token with Contents: Read on that repository."
+            exit 1
+          fi
+
+      - name: Fetch the generated game code
+        if: vars.OGRE_DATA_REPO != ''
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ vars.OGRE_DATA_REPO }}
+          token: ${{ secrets.OGRE_DATA_TOKEN }}
+          path: ogre-data
+
+      - name: Unpack the generated game code
+        if: vars.OGRE_DATA_REPO != ''
+        shell: bash
+        run: |
+          set -e
+          tar xzf ogre-data/files.tar.gz -C .
+          # A bundle packed on macOS can carry AppleDouble `._*` members, which
+          # extract as ordinary files here. app/CMakeLists.txt globs `*.c`, so
+          # they would be compiled and fail with `stray '\5' in program`.
+          # tools/data-bundle.sh no longer writes them; delete them anyway, so
+          # an existing bundle works.
+          find . -name '._*' -delete
+          find . -name '.DS_Store' -delete
+          for p in RecompiledFuncs app/src/bank_funcs.inc RspFuncs; do
+            test -e "$p" || { echo "::error::$p is missing from files.tar.gz"; exit 1; }
+          done
+          banks=$( (ls -d Bank*Funcs 2>/dev/null || true) | wc -l | tr -d ' ')
+          [ "$banks" -gt 0 ] || { echo "::error::Bank*Funcs/ is missing from files.tar.gz"; exit 1; }
+          echo "RecompiledFuncs: $(find RecompiledFuncs -type f | wc -l | tr -d ' ') files"
+          echo "Bank units:      $banks"
+          echo "RspFuncs:        $(find RspFuncs -type f | wc -l | tr -d ' ') files"
+          if [ -f ogre-data.txt ]; then
+            cat ogre-data.txt
+            recorded=$(sed -n 's/^public commit: //p' ogre-data.txt)
+            if [ -n "$recorded" ] && [ "$recorded" != "$GITHUB_SHA" ]; then
+              # A bundle generated before the commit being built is the state
+              # every hosted job starts in, and nothing here can tell whether
+              # that matters: the runner has no ROM, so it cannot recompile and
+              # compare. Refuse the mismatch instead of warning about it. The
+              # public repository's checkout is `fetch-depth: 0`, so the bundle's
+              # commit is present and git can say how far behind this build is.
+              echo "::error::files.tar.gz records public commit $recorded, and this release builds $GITHUB_SHA."
+              if git cat-file -e "$recorded^{commit}" 2>/dev/null; then
+                behind=$(git rev-list --count "$recorded..$GITHUB_SHA")
+                echo "::error::this build is $behind commit(s) newer, so the bundle's generated code may predate it."
+              fi
+              echo "::error::Regenerate the bundle and commit it to the private data repository, then re-run this job:"
+              echo "::error::    make recomp && make bank-recomp && make rsp-recomp && tools/data-bundle.sh"
+              exit 1
+            fi
+          fi
+
+      # RT64 is a git submodule and is already here. tools/N64ModernRuntime is
+      # gitignored, so a GitHub-hosted runner has none: clone the pinned
+      # upstream commit and apply the same two patches in patches/ a developer applies.
+      # A self-hosted runner already has it and skips that.
+      - name: Prepare third-party trees
+        shell: bash
+        run: |
+          set -e
+          N64MODERNRUNTIME_COMMIT=589bbf018a3e6d3646ddf7de1e7919f1b7e99bb1
+          if [ ! -d tools/N64ModernRuntime ]; then
+            echo "==> cloning N64ModernRuntime at $N64MODERNRUNTIME_COMMIT"
+            git clone https://github.com/N64Recomp/N64ModernRuntime.git tools/N64ModernRuntime
+            git -C tools/N64ModernRuntime checkout "$N64MODERNRUNTIME_COMMIT"
+            git -C tools/N64ModernRuntime submodule update --init --recursive
+            ( cd tools/N64ModernRuntime && git apply ../../patches/n64modernruntime-ob64.patch )
+            ( cd tools/N64ModernRuntime && git apply ../../patches/n64modernruntime-anotherworld.patch )
+            ( cd tools/N64ModernRuntime/N64Recomp && git apply ../../../patches/n64modernruntime-n64recomp.patch )
+          fi
+          if [ -f rt64-plume-sdl.patch ] && [ -d tools/RT64/src/contrib/plume ]; then
+            git -C tools/RT64/src/contrib/plume apply ../../../../rt64-plume-sdl.patch 2>/dev/null || true
+          fi
+
+      # A hosted runner checks out the RT64 and plume submodules pristine, so it
+      # needs the project's patches applied the way a developer's tree has them.
+      # A self-hosted runner already has them, so this step is for the hosted
+      # path; `apply_patch` skips a patch that is already in the tree.
+      - name: Patch the RT64 submodules
+        if: vars.OGRE_DATA_REPO != ''
+        shell: bash
+        run: |
+          set -e
+          # apply_patch <directory> <patch path relative to that directory>
+          #
+          # --ignore-whitespace compares the hunk context with the carriage
+          # returns ignored. A Windows runner checks the submodule out with CRLF,
+          # and without the flag `git apply` fails on a hunk whose last line has
+          # no newline (`\ No newline at end of file`; patches/rt64-ob64.patch has two,
+          # in rt64_tmem_hasher.h and rt64_native_target.cpp).
+          apply_patch() {
+            if ( cd "$1" && git apply --reverse --check --ignore-whitespace "$2" ) >/dev/null 2>&1; then
+              echo "==> already applied: $2"
+            else
+              ( cd "$1" && git apply --ignore-whitespace "$2" )
+              echo "==> applied $2"
+            fi
+          }
+          apply_patch tools/RT64 ../../patches/rt64-ob64.patch
+          apply_patch tools/RT64 ../../patches/rt64-anotherworld.patch
+          apply_patch tools/RT64/src/contrib/plume ../../../../../patches/rt64-plume-ob64.patch
+          apply_patch tools/RT64/src/contrib/plume ../../../../../tools/rt64-plume-sdl.patch
+
+      # The runner images ship CMake and a C++ compiler, but not everything the
+      # builds below need. These steps run on the hosted path only; a self-hosted
+      # runner already has its toolchain (docs/guides/app-build.md -> Releases
+      # carries the per-platform list).
+      - name: Install Linux build dependencies
+        if: vars.OGRE_DATA_REPO != '' && matrix.os == 'linux'
+        shell: bash
+        run: |
+          sudo apt-get update
+          # The audio headers are for the static SDL2 that `make sdl2-static`
+          # builds, not for the app. SDL2's CMake drops an audio backend whose
+          # development headers are missing with no error, and the OSS-only
+          # result cannot open a device on a PipeWire or PulseAudio machine, so
+          # the package would run silently (tools/check-sdl2-audio.sh, issue #8).
+          # The ALSA and PulseAudio packages are dependencies of `libsdl2-dev`;
+          # PipeWire is not, so it is named here.
+          sudo apt-get install -y libgtk-3-dev libvulkan-dev libx11-dev \
+            libasound2-dev libpulse-dev libpipewire-0.3-dev
+
+      # The Metal compiler is a separate download from Xcode 16 on. Probe first,
+      # so an image that already has it is untouched.
+      - name: Ensure the macOS Metal toolchain
+        if: vars.OGRE_DATA_REPO != '' && matrix.os == 'macos'
+        shell: bash
+        run: |
+          if xcrun -sdk macosx metal --version >/dev/null 2>&1; then
+            echo "==> metal compiler already available"
+          else
+            echo "==> downloading the Metal toolchain"
+            sudo xcodebuild -downloadComponent MetalToolchain
+          fi
+
+      # release-build.sh drives `make dist`; the Windows image has no make, and
+      # the app builds with clang-cl under Ninja (see matrix.cmake_args).
+      - name: Install Windows build dependencies
+        if: vars.OGRE_DATA_REPO != '' && matrix.os == 'windows'
+        shell: bash
+        run: choco install make ninja -y --no-progress
+
+      # clang-cl needs the MSVC headers, libraries and linker. This exports the
+      # Visual Studio developer environment to the steps that follow, exactly as
+      # in Zelda64Recomp's Windows job.
+      - name: Set up the MSVC developer environment
+        if: vars.OGRE_DATA_REPO != '' && matrix.os == 'windows'
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+
+      - name: Build and package
+        shell: bash
+        env:
+          DIST_OS: ${{ matrix.os }}
+          CMAKE_ARGS: ${{ matrix.cmake_args }}
+        run: tools/release-build.sh
+
+      # A package that cannot start must fail the release here rather than reach a
+      # player. Checks the companion files, that Windows ships every DLL its
+      # binaries import, and that the binary loads and reaches main
+      # (OGRE_SMOKE=1). See tools/smoke-dist.sh.
+      - name: Smoke-test the package
+        shell: bash
+        run: tools/smoke-dist.sh
+
+      - name: Collect the archive
+        shell: bash
+        run: |
+          set -e
+          mkdir -p "${{ matrix.dist_dir }}"
+          # release-build.sh writes both flavours when both tools exist (tar is
+          # in Git Bash, zip is in the macOS/Linux images), so pick the one this
+          # platform ships instead of copying the loop's last match over the
+          # matrix name -- that left the zip under a `.tar.gz` name.
+          src="dist/OB64-AnotherWorld-${{ matrix.os }}.${{ matrix.flavour }}"
+          test -f "$src" || { echo "::error::$src was not produced"; exit 1; }
+          cp "$src" "${{ matrix.dist_dir }}/${{ matrix.archive }}"
+          echo "collected $src"
+          ls -lh "${{ matrix.dist_dir }}"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-${{ matrix.os }}
+          path: ${{ matrix.dist_dir }}/*
+          if-no-files-found: error
+
+  release:
+    name: Attach to the GitHub release
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - name: Show what will be attached
+        run: ls -lh artifacts
+
+      - name: Create or update the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.tag || github.ref_name }}
+          DRAFT: ${{ inputs.draft }}
+        run: |
+          set -e
+          # A tag push publishes; workflow_dispatch can ask for a draft. A tag
+          # containing `-rc` is marked a GitHub pre-release, so an RC never
+          # becomes the "Latest" download.
+          draft_args=()
+          if [ "${DRAFT:-false}" = "true" ]; then
+            draft_args+=(--draft)
+          fi
+          case "$TAG" in
+            *-rc*) draft_args+=(--prerelease);;
+          esac
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release upload "$TAG" artifacts/* --repo "$GITHUB_REPOSITORY" --clobber
+            # Publishing a release that a previous run left as a draft.
+            if [ "${DRAFT:-false}" != "true" ]; then
+              edit_args=(--draft=false)
+              case "$TAG" in
+                *-rc*) edit_args+=(--prerelease);;
+              esac
+              gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" "${edit_args[@]}"
+            fi
+          else
+            gh release create "$TAG" artifacts/* \
+              --repo "$GITHUB_REPOSITORY" \
+              "${draft_args[@]}" \
+              --title "Ogre Battle 64: Recomp $TAG" \
+              --notes "$(cat <<'NOTES'
+          Native builds of the port for the platforms below.
+
+          **These packages contain no game data.** You must supply your own
+          Ogre Battle 64 (USA, Rev A) ROM dump; the app asks for it on first
+          launch ("Click to load your ROM") and stores it beside itself after
+          validating it by hash. Saves are written to `saves/` next to the
+          executable.
+
+          See the README inside each archive, and the repository README for
+          build instructions and the full list of environment options.
+          NOTES
+          )"
+          fi
+

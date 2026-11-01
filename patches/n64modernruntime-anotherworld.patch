@@ -1,0 +1,185 @@
+diff --git a/librecomp/include/librecomp/overlays.hpp b/librecomp/include/librecomp/overlays.hpp
+index be20d5b..fd026f3 100644
+--- a/librecomp/include/librecomp/overlays.hpp
++++ b/librecomp/include/librecomp/overlays.hpp
+@@ -71,8 +71,35 @@ namespace recomp {
+         struct BankFunctionEntry {
+             int32_t ram_addr;
+             recomp_func_t* func;
++            // The function's size in ROM bytes (FuncEntry::rom_size). The mod
++            // hook path regenerates a hooked function from this many ROM words;
++            // 0 means the function cannot be hooked.
++            uint32_t rom_size = 0;
+         };
+ 
++        // --- Mod hooks on bank functions --------------------------------------
++        //
++        // A mod hook names its target by the section's ROM address and the
++        // function's vram. The bank records are kept out of `sections_info`,
++        // because that table also drives the DMA-driven section loader
++        // (`notify_rom_read`) and the `section_addresses` relocation table,
++        // which a bank record must not enter. This registry is only read by
++        // the hook path in mods.cpp (`build_regen_list`). It must be filled
++        // before `load_mods` runs.
++        struct BankHookSection {
++            uint32_t rom_addr;
++            int32_t ram_addr;
++            uint32_t size;
++            const BankFunctionEntry* funcs;
++            size_t num_funcs;
++        };
++
++        void register_bank_hook_sections(const BankHookSection* sections, size_t count);
++        // Returns the bank record registered at ROM address `rom_addr`, or nullptr.
++        const BankHookSection* get_bank_hook_section(uint32_t rom_addr);
++        // Finds the function at `function_vram` in the bank record at `rom_addr`.
++        bool get_bank_hook_func_entry(uint32_t rom_addr, uint32_t function_vram, FuncEntry& func_out);
++
+         void load_function_bank(uint32_t rom_start, int32_t ram_addr, uint32_t size, const BankFunctionEntry* funcs, size_t count);
+         // Keyed by ROM start, not RAM: different records are different banks of
+         // the same RAM and must be able to replace each other.
+diff --git a/librecomp/src/mods.cpp b/librecomp/src/mods.cpp
+index 856225c..0506294 100644
+--- a/librecomp/src/mods.cpp
++++ b/librecomp/src/mods.cpp
+@@ -1922,6 +1922,10 @@ std::vector<recomp::mods::ModLoadErrorDetails> build_regen_list(
+     size_t cur_section_reloc_index = 0;
+     bool cur_func_is_base_patched = false;
+     recomp::overlays::BasePatchedFunction cur_base_patched = {};
++    // Set when the current section is a streamed-overlay bank record
++    // (recomp::overlays::register_bank_hook_sections) instead of a section of
++    // the base ELF.
++    bool cur_section_is_bank = false;
+ 
+     // Collect the unprocessed hooks into a patch list.
+     // Hooks have been sorted by their section address and function address at this point so they
+@@ -1934,7 +1938,13 @@ std::vector<recomp::mods::ModLoadErrorDetails> build_regen_list(
+         if (cur_hook_def.section_rom != cur_section_rom) {
+             // Get the index of the section.
+             auto find_section_it = section_vrom_map.find(cur_hook_def.section_rom);
+-            if (find_section_it == section_vrom_map.end()) {
++            const recomp::overlays::BankHookSection* bank_section = nullptr;
++            if constexpr (!patched_regenlist) {
++                if (find_section_it == section_vrom_map.end()) {
++                    bank_section = recomp::overlays::get_bank_hook_section(cur_hook_def.section_rom);
++                }
++            }
++            if (find_section_it == section_vrom_map.end() && bank_section == nullptr) {
+                 std::stringstream error_param_stream{};
+                 error_param_stream << std::hex <<
+                     "section: 0x" << cur_hook_def.section_rom <<
+@@ -1945,14 +1955,26 @@ std::vector<recomp::mods::ModLoadErrorDetails> build_regen_list(
+                 return ret;
+             }
+ 
+-            uint16_t section_index = find_section_it->second;
++            uint16_t section_index = 0;
+             uint32_t section_ram_addr;
+-
+-            if constexpr (patched_regenlist) {
++            cur_section_is_bank = bank_section != nullptr;
++
++            if (cur_section_is_bank) {
++                // A bank record's code is linked at its own RAM base with
++                // absolute immediates and carries no relocs, so the function
++                // regenerates from its ROM words alone. `section_index` only
++                // feeds the jump-table path of a relocatable section, which
++                // this section is not.
++                section_ram_addr = (uint32_t)bank_section->ram_addr;
++                cur_section_relocs = {};
++            }
++            else if constexpr (patched_regenlist) {
++                section_index = find_section_it->second;
+                 section_ram_addr = recomp::overlays::get_patch_section_ram_addr(section_index);
+                 cur_section_relocs = recomp::overlays::get_patch_section_relocs(section_index);
+             }
+             else {
++                section_index = find_section_it->second;
+                 section_ram_addr = recomp::overlays::get_section_ram_addr(section_index);
+                 cur_section_relocs = recomp::overlays::get_section_relocs(section_index);
+             }
+@@ -1987,6 +2009,9 @@ std::vector<recomp::mods::ModLoadErrorDetails> build_regen_list(
+             if constexpr (patched_regenlist) {
+                 found_func = recomp::overlays::get_patch_func_entry_by_section_index_function_offset(cur_section_index, function_section_offset, func_entry);
+             }
++            else if (cur_section_is_bank) {
++                found_func = recomp::overlays::get_bank_hook_func_entry(cur_hook_def.section_rom, cur_hook_def.function_vram, func_entry);
++            }
+             else {
+                 found_func = recomp::overlays::get_func_entry_by_section_index_function_offset(cur_section_index, function_section_offset, func_entry);
+             }
+diff --git a/librecomp/src/overlays.cpp b/librecomp/src/overlays.cpp
+index 6ad498c..261e64e 100644
+--- a/librecomp/src/overlays.cpp
++++ b/librecomp/src/overlays.cpp
+@@ -4,7 +4,7 @@
+ #include <cstdio>
+ // OGRE: execinfo.h/backtrace are POSIX; the MSVC CRT has neither, so the host
+ // stack dump below is Linux/macOS only.
+-#if !defined(__EMSCRIPTEN__) && !defined(_WIN32)
++#if !defined(__EMSCRIPTEN__) && !defined(_WIN32) && !defined(__ANDROID__)
+ #include <execinfo.h>
+ #endif
+ #include <cstring>
+@@ -64,6 +64,9 @@ struct LoadedFunctionBank {
+     size_t count;
+ };
+ static std::vector<LoadedFunctionBank> loaded_function_banks{};
++// Bank records a mod hook may target, keyed by ROM start. See
++// register_bank_hook_sections() in overlays.hpp.
++static std::unordered_map<uint32_t, recomp::overlays::BankHookSection> bank_hook_sections{};
+ static void (*streamed_dma_hook)(uint32_t, uint32_t, uint32_t) = nullptr;
+ static std::unordered_map<std::string, recomp_func_t*> base_exports{};
+ static std::unordered_map<std::string, recomp_func_ext_t*> ext_base_exports{};
+@@ -639,6 +642,41 @@ bool recomp::overlays::get_func_entry_by_section_index_function_offset(uint16_t
+     return false;
+ }
+ 
++void recomp::overlays::register_bank_hook_sections(const BankHookSection* sections, size_t count) {
++    // Entries are copied. The app registers again on every game start, which
++    // replaces each record with the same values.
++    for (size_t i = 0; i < count; i++) {
++        bank_hook_sections.insert_or_assign(sections[i].rom_addr, sections[i]);
++    }
++}
++
++const recomp::overlays::BankHookSection* recomp::overlays::get_bank_hook_section(uint32_t rom_addr) {
++    auto find_it = bank_hook_sections.find(rom_addr);
++    if (find_it == bank_hook_sections.end()) {
++        return nullptr;
++    }
++    return &find_it->second;
++}
++
++bool recomp::overlays::get_bank_hook_func_entry(uint32_t rom_addr, uint32_t function_vram, FuncEntry& func_out) {
++    const BankHookSection* section = get_bank_hook_section(rom_addr);
++    if (section == nullptr) {
++        return false;
++    }
++    uint32_t function_offset = function_vram - (uint32_t)section->ram_addr;
++    if (function_offset >= section->size) {
++        return false;
++    }
++    for (size_t func_index = 0; func_index < section->num_funcs; func_index++) {
++        const BankFunctionEntry& entry = section->funcs[func_index];
++        if ((uint32_t)entry.ram_addr == function_vram) {
++            func_out = FuncEntry{ .func = entry.func, .offset = function_offset, .rom_size = entry.rom_size };
++            return true;
++        }
++    }
++    return false;
++}
++
+ void recomp::overlays::register_manual_patch_symbols(const ManualPatchSymbol* manual_patch_symbols) {
+     for (size_t i = 0; manual_patch_symbols[i].func != nullptr; i++) {
+         if (!manual_patch_symbols_by_vram.emplace(manual_patch_symbols[i].ram_addr, manual_patch_symbols[i].func).second) {
+@@ -736,7 +774,7 @@ extern "C" recomp_func_t * get_function(int32_t addr) {
+ 
+     fprintf(stderr, "Failed to find function at 0x%08X\n", addr);
+     dump_caller_chain("null-lookup");
+-#if !defined(__EMSCRIPTEN__) && !defined(_WIN32)
++#if !defined(__EMSCRIPTEN__) && !defined(_WIN32) && !defined(__ANDROID__)
+     // Temporary: dump the host call stack to identify the caller.
+     void* bt[32];
+     int n = backtrace(bt, 32);
+

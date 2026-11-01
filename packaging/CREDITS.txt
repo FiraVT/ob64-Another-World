@@ -1,0 +1,124 @@
+OB64: Another World - credits
+=============================
+
+This project is built on other people's work. Its own code is licensed under
+the GNU General Public License, version 3 or later (LICENSE.txt), and its
+source code is at https://github.com/FiraVT/ob64-Another-World.
+
+
+LordlyCaliber, by rempred (MIT license)
+    https://github.com/rempred/LordlyCaliber
+
+    An editor for Ogre Battle 64, built on a decompilation of the game.
+
+    The overhaul exists because of it. Before this project found
+    LordlyCaliber, the work had reached the new field controls and stopped
+    there: the game's data was not understood well enough to change what the
+    enemy fields. LordlyCaliber's decompiled C, record formats and validator
+    rules supplied that understanding. Built directly on it:
+
+    - Custom enemy units and spawning: the war director writes the game's
+      35-byte enemy unit record (a leader and two member groups of up to
+      three) and follows LordlyCaliber's validator rules for it, including
+      the rule that a large unit has no neighbours. Garrisons, bought units,
+      boss escorts and supply trains are all built this way.
+    - Enemy weapons: the item choice in each member group of that record,
+      and the rule that a choice replaces the class's basic weapon in the
+      same slot (squads.js). The enemy weapon upgrades are built on it.
+    - Save data: field names in the save table (hpMax and its neighbours)
+      that the field screens read.
+    - The game's code: names for about a thousand of the game's functions
+      (tools/revmap.py, tools/lc_lookup.py), and the decompiled routines used
+      to understand the field orders and the town liberation rule.
+    - Sprites: the format the Organize screen draws portraits with.
+
+    Its license is reproduced at the end of this file.
+
+Ogre Battle 64 recompilation, by lfarroco
+    https://github.com/lfarroco/ogre-battle-64-recomp
+
+    The static recompilation of the game that this project is a fork of.
+
+N64Recomp, by Wiseguy (MIT license)
+    The recompiler that turns the N64 code into native code.
+
+N64ModernRuntime (GPL-3.0)
+    The runtime the recompiled game runs on.
+
+RT64 (MIT license)
+    The renderer.
+
+RmlUi (MIT license)
+    The field, Organize and alert screens.
+
+FreeType (FreeType Project License)
+    Font rendering for RmlUi. Portions of this software are copyright (c) 2023
+    The FreeType Project (https://freetype.org). All rights reserved.
+
+SDL2, by Sam Lantinga (zlib license)
+    Windows, input and audio. See SDL2-LICENSE.txt.
+
+Input Prompts, by Kenney (www.kenney.nl) (Creative Commons Zero, CC0)
+    The key and button images in ui/prompts. See ui/prompts/KENNEY-LICENSE.txt.
+
+Lato, by Lukasz Dziedzic (SIL Open Font License 1.1)
+    The interface font. See ui/fonts/OFL-LICENSE.txt.
+
+Lua 5.4, by Lua.org, PUC-Rio (MIT license)
+    The scripting language for content scripts. The license is below.
+
+Ogre Battle 64 (c) Quest / Nintendo. This project is for preservation and
+interoperability research. This package contains no ROM, no extracted assets
+and no game data; never distribute the ROM or its extracted assets.
+
+
+--------------------------------------------------------------------------------
+LordlyCaliber license
+--------------------------------------------------------------------------------
+
+MIT License
+
+Copyright (c) 2026 rempred
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+
+Lua license
+-----------
+
+Copyright (C) 1994-2025 Lua.org, PUC-Rio.
+
+Permission is hereby granted, free of charge, to any person obtaining
+a copy of this software and associated documentation files (the
+"Software"), to deal in the Software without restriction, including
+without limitation the rights to use, copy, modify, merge, publish,
+distribute, sublicense, and/or sell copies of the Software, and to
+permit persons to whom the Software is furnished to do so, subject to
+the following conditions:
+
+The above copyright notice and this permission notice shall be
+included in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
+IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
+CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,
+TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
+SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.

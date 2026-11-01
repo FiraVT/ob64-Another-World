@@ -1,0 +1,78 @@
+<rml>
+<head>
+    <title>Options</title>
+    <link type="text/rcss" href="options.rcss"/>
+</head>
+<body>
+<div id="menu" data-model="options">
+    <div id="titlebar" class="win">
+        <div class="brand">Options</div>
+        <div class="spacer"></div>
+        <button class="close" data-event-click="close()">Resume (Esc)</button>
+    </div>
+
+    <div id="tabbar">
+        <button class="tab" data-for="t : tabs" data-class-active="t.active" data-class-disabled="!t.enabled" data-event-click="tab(t.index)">{{t.label}}</button>
+    </div>
+
+    <div id="body" class="win">
+        <div id="rows">
+            <div data-for="r : rows">
+                <div class="section" data-if="r.kind == 'section'">{{r.left}}</div>
+                <!-- The player's mods (ui.cpp ContentMod*): a table with a header, one row per item and its details lines. A row is dragged to a new place; its cells are the switch, the name (details), up, down and delete. -->
+                <div class="modhead" data-if="r.kind == 'modhead'">
+                    <span class="c-grip"></span><span class="c-num">#</span><span class="c-on">ON</span><span class="c-name">MOD</span><span class="c-status">STATUS</span><span class="c-order">ORDER</span><span class="c-del">DELETE</span>
+                </div>
+                <div class="modrow" data-if="r.kind == 'mod' || r.kind == 'modopen'" data-class-selected="r.selected" data-class-drop="r.drop" data-class-dragging="r.dragging" data-event-click="choose(r.index, 1)" data-event-dragstart="drag_start(r.index)" data-event-dragover="drag_over(r.index)" data-event-dragdrop="drag_drop(r.index)" data-event-dragend="drag_end()">
+                    <span class="c-grip"><span class="grip"></span></span>
+                    <span class="c-num">{{r.number}}</span>
+                    <span class="c-on"><button class="switch" data-class-on="r.on" data-class-focus="r.cell == 0" data-event-click="choose(r.index, 0)"><span class="knob"></span></button></span>
+                    <div class="c-name" data-class-focus="r.cell == 1">
+                        <div class="modtitle">{{r.left}}</div>
+                        <div class="modnote"><span data-if="r.note != ''">{{r.note}} </span><span class="more">{{r.more}}</span></div>
+                    </div>
+                    <div class="c-status"><span class="pill" data-class-on="r.tone == 'on'" data-class-off="r.tone == 'off'" data-class-pending="r.tone == 'pending'" data-class-warn="r.tone == 'warn'" data-class-bad="r.tone == 'bad'">{{r.right}}</span></div>
+                    <span class="c-order"><button class="icon up" data-class-focus="r.cell == 2" data-class-dim="r.first" data-event-click="choose(r.index, 2)"></button><button class="icon down" data-class-focus="r.cell == 3" data-class-dim="r.last" data-event-click="choose(r.index, 3)"></button></span>
+                    <span class="c-del"><button class="icon del" data-class-armed="r.armed" data-class-focus="r.cell == 4" data-event-click="choose(r.index, 4)"></button></span>
+                </div>
+                <div class="modinfo" data-if="r.kind == 'modinfo'"><span class="infolabel">{{r.left}}</span><span class="infotext">{{r.right}}</span></div>
+                <div class="modinfo modlink" data-if="r.kind == 'modlink'" data-class-selected="r.selected" data-event-click="activate(r.index)"><span class="infolabel">PAGE</span><span class="infotext link">{{r.right}}</span></div>
+                <div class="row" data-if="r.kind != 'section' && r.kind != 'modhead' && r.kind != 'mod' && r.kind != 'modopen' && r.kind != 'modinfo' && r.kind != 'modlink'" data-class-selected="r.selected" data-class-locked="!r.selectable" data-event-click="activate(r.index)">
+                    <span class="arrow" data-if="r.kind == 'profile' || r.kind == 'profileopen'" data-class-open="r.kind == 'profileopen'"></span>
+                    <div class="left">{{r.left}}</div>
+                    <div class="right" data-if="r.kind == 'row' || r.kind == 'profile' || r.kind == 'profileopen'">{{r.right}}</div>
+                    <div class="choices" data-if="r.kind == 'radio'">
+                        <span class="choice" data-for="o : r.options" data-class-current="o.current" data-event-click="choose(r.index, o.index)">{{o.label}}</span>
+                    </div>
+                    <div class="slider" data-if="r.kind == 'slider'">
+                        <span class="cell" data-for="o : r.options" data-class-filled="o.current" data-event-click="choose(r.index, o.index)"></span>
+                        <span class="slidertext">{{r.right}}</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="hint">{{hint}}</div>
+
+    <!-- The MODS tab's DELETE asks here before it erases anything (ui.cpp delete_prompt). -->
+    <div id="confirm" data-if="confirm != ''">
+        <div class="dialog win">
+            <div class="dtitle" data-if="confirm_allowed">Delete for good?</div>
+            <div class="dtitle" data-if="!confirm_allowed">Cannot delete yet</div>
+            <div class="dtext">{{confirm}}</div>
+            <div class="dbuttons" data-if="confirm_allowed">
+                <button class="dbtn danger" data-event-click="choose(confirm_row, 4)">Delete</button>
+                <button class="dbtn" data-event-click="choose(confirm_row, 5)">Cancel</button>
+            </div>
+            <div class="dbuttons" data-if="!confirm_allowed">
+                <button class="dbtn" data-event-click="choose(confirm_row, 5)">OK</button>
+            </div>
+            <div class="dhint" data-if="confirm_allowed">Enter or A: delete. Esc, B or any other key: cancel.</div>
+            <div class="dhint" data-if="!confirm_allowed">Esc, B or any key: close.</div>
+        </div>
+    </div>
+</div>
+</body>
+</rml>
+

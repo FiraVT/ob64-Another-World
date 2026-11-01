@@ -1,0 +1,104 @@
+# N64Recomp config for streamed-overlay bank unit N (Phase 4).
+# See config/banks/config-bankM.toml for the model. This unit holds the three segment-table
+# records the mission scene (0x03) streams:
+#
+#   bankRec7 ROM 0x101D00 (0x43530) -> RAM 0x801AD5C0
+#   bankRec8 ROM 0x145230 (0x099D0) -> RAM 0x801F4050
+#   bankRec9 ROM 0x14EC00 (0x173E0) -> RAM 0x801FDA90
+
+[input]
+output_func_path = "../../BankNFuncs"
+elf_path = "../../build/bankN.elf"
+rom_file_path = "../../assets/ogre64.z64"
+use_absolute_symbols = true
+uses_mips3_float_mode = true
+bss_section_suffix = ".bss"
+functions_per_output_file = 100
+
+# The mission's nearest-target search func_ovlN_801B2F4C walks the object list at
+# obj+0xA8 and keeps the nearest candidate. N64Recomp's poll-loop heuristic (see
+# tools/N64Recomp/src/recompilation.cpp, is_yield_poll_loop) injects a blocking
+# yield_self() before the loop's backward branch because the body reads
+# `lwc1 $f2, 8($s0)` from a callee-saved base register -- a benign invariant
+# address. 0x801B3008 is the backward branch of that loop, and it is NOT a poll
+# loop: it terminates on a list element loaded from an address the loop itself
+# advances. yield_self blocks until an external message arrives (~one VI
+# retrace, 16.7 ms), so a 22-entity scan paid ~22 retraces and the mission fell
+# from 30 to 1.4 display lists/s after combat (session 79). Listing the branch
+# here suppresses the yield at that one site and leaves the other 51 sites
+# byte-identical (session 80).
+#
+# The same heuristic misfires on func_ovlN_801DA248 (record 7, 0x801DA248), the
+# 10x5 categorical lookup that the unit-command "use item" screen runs per item:
+# its outer loop is bounded by `slti $a2, 0xA` and its inner loop by
+# `slti $v1, 5`, over the 11-byte records at 0x801969D8. The body makes no calls
+# and no stores; the invariant-base load the heuristic keys on is `lw $v0, 0($a0)`
+# at 0x801DA268 ($a0 is the argument, tested once per iteration for flag bit 3 and
+# never the loop's exit condition -- the exit is `slti $a2, 0xA`). 0x801DA2C0 is
+# the outer loop's backward branch, and the injected blocking yield_self() cost
+# the frame-pump thread up to nine retraces per call: the developer-driven slow
+# frame was 258 ms at OGRE_SPEED=4, i.e. ~61 external messages of ~4.2 ms, or
+# about seven calls to this function per frame (session 90).
+#
+# The third misfire is func_ovlN_801D0B78 (record 7, 0x801D0B78), which scans
+# the -1-terminated object-id list at obj+0xA8 (obj+0x80 is the caller's own id,
+# and 0x801F0CD0 is the id -> object table). The loop advances $s3 by one entry
+# per iteration and exits when the loaded entry is -1. For each entry it tests
+# `lw $v0,0($s2); andi $v0,0x31` against 0x31, and for an entry inside the
+# distance threshold it mallocs a w*h scratch buffer (0x80070F30), zeroes it and
+# calls func_ovlN_801D08A0. 0x801D0C08 is the `bnel $v0,$v1` skip branch, and
+# the injected blocking yield_self() ran once per skipped entry. With the
+# frame-pump thread parked there the developer's escort mission went from an
+# 8 ms display-list period to 80-183 ms for ~2.6 s (t=57304..59921 ms;
+# T=59000 puts t4 in 0x801D0B78 at 93%), and recovered when the list shortened.
+# The raw ROM bytes at 0x5443FFEE/0x26730001 match bankN.elf.
+#
+# The fourth misfire is func_ovlN_80208E84 (record 9, 0x80208E84), the big
+# unit/roster builder the mission's unit list runs. Its inner loop at
+# 0x8020A814..0x8020A910 walks up to five 1-byte records and keeps the maximum
+# of the byte it loads from each. The bound is not a game count: 0x8020A80C
+# sets `a3 = a1 + 5`, and the loop advances `a1` by one and exits on
+# `a1 < a3`. The invariant-base load the heuristic keys on is `lbu $v0, 4($s6)`
+# at 0x8020A820, the unit's flags byte; the body never writes $s6. 0x8020A910 is
+# the loop's backward branch. A five-entry scan takes that back edge four times,
+# so it paid four blocking waits of about one VI retrace each. With the unit
+# list open the frame-pump thread (t4) sat in that function and the developer's
+# scene_5_suspend.bin save fell from 60-110 display lists/s to 12-13/s, a median
+# 79 ms gap. A host stack sample (`sample <pid>`) put 1608 of 1670 samples of t4
+# in `yield_self` under func_ovlN_80208E84. The raw ROM word at 0x8020A910 is
+# 0x1440FFC0 (`bnez $v0, 0x8020A814`), delay slot 0x00000000.
+#
+# The fifth misfire is func_ovlN_80204C08 (record 9, 0x80204C08), the entry
+# selection the mission's unit UI calls (0x80204300 in func_ovlN_80204230;
+# 0x802048B4 and 0x80204B20 in func_ovlN_802043BC, the frame-pump path
+# func_8008AFE0 -> func_80072398 -> func_800765D8). The loop at
+# 0x80204C1C..0x80204C48 walks 36-byte entries at `state[+0x60]`
+# (`state = *(0x80213690)`), counts the entries whose word at +8 equals the id
+# in `state[+0x66]`, and exits when that count (`$t0`, set to -1 at 0x80204C08,
+# incremented only on a match at 0x80204C38) equals the signed byte in
+# `state[+0x68]`. The body makes no call and no store. The invariant-base load
+# the heuristic keys on is `lb $v1, 0x68($t1)` at 0x80204C3C, the loop's own
+# exit threshold; `$t1` is loaded once at 0x80204C18 and never written. The
+# caller's own scan of the same array at 0x8020484C carries no yield and
+# terminates on the same data, so the threshold is data and not a value another
+# thread produces. 0x80204C48 is the backward branch.
+#
+# Measured on `OGRE_SAVE=assets/scene_5_suspend.bin` with the session-112 tap
+# recipe (title -> 0x12 Load Game -> 0x03) and four A presses in scene 0x03
+# opening the menu. The captured menu state is `state = 0x800E91D0`, array
+# 0x801F3A90, id 0, threshold 1, and the loop exits after five iterations, so
+# the call took the back edge four times and paid four blocking waits of about
+# one VI retrace each. With the unit-command menu open (tooltip `Commands`,
+# `LEADER Deneb`) the mission fell from 75 display lists/s with a 10 ms median
+# gap to 37/s with a 21 ms median and a 50 ms p90; a host stack sample
+# (`sample <pid>`) put 3893 of the frame-pump thread's 7071 samples over the 14
+# slow seconds in `yield_self` under func_ovlN_80204C08 (18-82 % per second).
+# The raw ROM word at RAM 0x80204C48 (ROM 0x155DB8) is 0x1443FFF4
+# (`bne $v0, $v1, 0x80204C1C`), delay slot 0x24E70001 (`addiu $a3, $a3, 1`).
+yield_work_loop_branches = [0x801B3008, 0x801DA2C0, 0x801D0C08, 0x8020A910, 0x80204C48]
+
+# Splat is given each record's own code/data boundary (see config/banks/config-bankN.yaml).
+# Extend any piece it still caps in the middle of a call-and-continue emission
+# here (the failure is "use of undeclared label" at the `goto after_N`).
+function_sizes = []
+

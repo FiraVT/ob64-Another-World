@@ -1,0 +1,716 @@
+// Ogre Battle 64: Person of Lordly Caliber - PC port app entry point.
+//
+// Boot flow:
+//   1. SDL + window
+//   2. register_game() with the recompiled entrypoint
+//   3. register base overlays (section tables from recomp_overlays.inl)
+//   4. select_rom() to validate/store the user's ROM
+//   5. start_game() + recomp::start() (the runtime spawns the game thread,
+//      which boots the recompiled code via `recomp_entrypoint`)
+//
+// The main thread stays in recomp::start's loop, pumping SDL events via the
+// update_gfx callback until ultramodern::quit() is requested.
+
+#include <cstdio>
+#include <cstdlib>
+#include <csignal>
+#include <chrono>
+#include <cstring>
+#include <filesystem>
+#include <string>
+#include <thread>
+
+#include <SDL.h>
+
+#if defined(_WIN32) && !defined(__MINGW32__)
+// For the WinMain forwarder at the bottom of this file. WIN32_LEAN_AND_MEAN
+// keeps windows.h small; the runtime's renderer_context.hpp defines it too, and
+// an identical redefinition is harmless.
+#define WIN32_LEAN_AND_MEAN
+#include <windows.h>
+#endif
+
+#include "recomp.h"
+#include "funcs.h"
+#include "librecomp/game.hpp"
+#include "librecomp/mods.hpp"
+
+#include "game.hpp"
+#include "crash_log.hpp"
+#include "hd_backgrounds.hpp"
+#include "launcher.hpp"
+#include "input_map.hpp"
+#include "war_director.hpp"
+#include "music_replace.hpp"
+#include "overlay.hpp"
+#include "settings.hpp"
+#include "speed_badge.hpp"
+#include "button_legend.hpp"
+#ifdef OGRE_HAVE_RMLUI
+#include "rml_ui.hpp"
+#endif
+#include "frame_rate.hpp"
+#include "widescreen.hpp"
+#include "rom_patch.hpp"
+#include "sdl_platform.hpp"
+#include "version.hpp"
+#include "renderer.hpp"
+#include "rsp.hpp"
+#include "overlays.hpp"
+#include "bank_overlays.hpp"
+#include "save_import.hpp"
+
+namespace ogre {
+Platform g_platform;
+}
+
+namespace {
+
+// A one-line explanation of a ROM rejection, for both the launcher screen and
+// the console.
+std::string rom_error_text(recomp::RomValidationError error, const std::string& path) {
+    switch (error) {
+        case recomp::RomValidationError::IncorrectVersion:
+            return "This is a different version of Ogre Battle 64. The port needs the "
+                   "USA Rev A dump (" +
+                   std::string(ogre::INTERNAL_NAME) + ").";
+        case recomp::RomValidationError::IncorrectRom:
+            return "That file is not Ogre Battle 64 (" + path + ").";
+        case recomp::RomValidationError::NotARom:
+            return "That file is not an N64 ROM (" + path + ").";
+        case recomp::RomValidationError::NotYet:
+            return "That version of the game is not supported yet (" + path + ").";
+        case recomp::RomValidationError::FailedToOpen:
+            return "Could not open " + path + ".";
+        default:
+            return "Could not load " + path + ".";
+    }
+}
+
+// A launch that names its ROM explicitly (the argument, OGRE_ROM, a ROM sitting
+// next to the executable, or the copy the runtime stored on a previous run)
+// boots straight away; `OGRE_LAUNCHER=1` asks for the start screen anyway.
+bool launcher_forced() {
+    const char* value = getenv("OGRE_LAUNCHER");
+    return value != nullptr && value[0] != '\0' && strcmp(value, "0") != 0;
+}
+
+// Shift held while the game starts opens the start screen, which has the save
+// restore and import (they must run before the game reads the save). The
+// package ships no code mods, so without this a ROM beside the executable boots
+// straight into the game. Windows reads the key from the OS, because SDL has no
+// keyboard state before a window exists; other systems use OGRE_LAUNCHER=1.
+bool shift_held_at_start() {
+#if defined(_WIN32) && !defined(__MINGW32__)
+    return (GetAsyncKeyState(VK_SHIFT) & 0x8000) != 0;
+#else
+    return false;
+#endif
+}
+
+// `OGRE_MOD_TEST=1`: an installed mod normally forces the start screen, because
+// the screen owns the mod toggles and a player must be able to turn a mod off
+// before it runs. A scripted run needs the opposite, so this starts the game
+// with `mods.json` as it stands and no screen. It is a bring-up and test knob,
+// not a player-facing setting; `OGRE_LAUNCHER=1` still wins over it.
+bool mod_test_run() {
+    const char* value = getenv("OGRE_MOD_TEST");
+    return value != nullptr && value[0] != '\0' && strcmp(value, "0") != 0;
+}
+
+}  // namespace
+
+// Frames the game must have produced before an interactive exit goes through the
+// runtime's teardown. The counter is the game's own (`D_800AEFA4`, read by
+// overlay_frames_produced) and is 0 for the first several seconds of a boot, so
+// anything well past 0 means the frame pump and the renderer are both up.
+constexpr int kFirstFrameCount = 60;
+
+static void update_gfx(void*) {
+    // OGRE_SCENE=<name|hex>: boot straight into a screen (see bank_overlays.cpp).
+    // Polled here because this callback runs once per frame.
+    ogre::poll_scene();
+    // The WIDESCREEN toggle is a function of the active scene (its ON state
+    // turns RT64's Expand aspect ratio on for scene 0x03 only), and the scene
+    // can change on any frame, so it is applied here beside poll_scene. The
+    // return value is the *toggle* changing, which is the only thing that
+    // changes the window's shape: a scene transition must not resize the window,
+    // and while the toggle is on the 4:3 scenes are pillarboxed instead.
+    if (ogre::widescreen_update()) {
+        ogre::widescreen_fit_window(ogre::g_platform.window);
+    }
+    // FRAME RATE is a function of the active scene too: DISPLAY raises RT64's
+    // refresh rate on the mission field (scene 0x03) only.
+    ogre::frame_rate_update();
+    bool quit = false;
+    ogre::pump_sdl_events(ogre::g_platform, &quit);
+    // The Esc overlay owns a window of its own; drawing it here keeps it on the
+    // main thread, where SDL's Cocoa backend requires window calls to happen.
+    ogre::overlay_render();
+    // The game-speed badge ("2x", "4x", ...) is a second window over the game
+    // window's corner, on the same main thread, shown for a couple of seconds
+    // after the multiplier changes.
+    ogre::speed_badge_tick();
+    // The F1 button legend (button_legend.hpp).
+    ogre::button_legend_tick();
+    // The overlay's MAIN tab carries EXIT GAME. It records the request instead
+    // of ending the run itself, so this one exit path prints the dumps below and
+    // calls ultramodern::quit for both the close button and the panel. The
+    // predicate also holds the request until the boot has produced a frame,
+    // because an exit inside the runtime's own startup hangs or crashes its
+    // teardown; see ogre::overlay_quit_requested.
+    if (ogre::overlay_quit_requested()) {
+        fprintf(stderr, "[overlay] EXIT GAME\n");
+        fflush(stderr);
+        quit = true;
+    }
+    if (quit) {
+        // Closing the window is how an *interactive* run ends, so the dumps a
+        // bounded run prints on its exit path have to print here too --
+        // otherwise a session played by hand (`OGRE_COVER=1` for a coverage
+        // census, `OGRE_PROFILE=1` for the hot list) produces nothing at all.
+        // All are no-ops unless their env var is set. OGRE_DMA_TRACE=1 in
+        // particular is how a hand-played hunt names a streamed module the port
+        // has no record for (session 82/85), so it must survive a window close
+        // the same way the bounded-run exit path lets it.
+        ultramodern::debug_profile_dump();
+        ultramodern::debug_cover_dump();
+        ogre::dump_dma_trace();
+        // OGRE_DUMP_RDRAM=<path>: the whole 8 MiB image, the same dump the
+        // bounded-run exit path writes. Without this a hand-played session had
+        // no way to produce one at all -- only `OGRE_EXIT_AFTER_MS` (which kills
+        // the window mid-play) and the crash handler did (session 85: the credits
+        // freeze wanted exactly this image and there was none).
+        if (const char* dump_path = getenv("OGRE_DUMP_RDRAM")) {
+            if (uint8_t* rdram = ultramodern::get_rdram_base()) {
+                if (FILE* f = fopen(dump_path, "wb")) {
+                    const size_t written = fwrite(rdram, 1, 0x800000, f);
+                    fclose(f);
+                    fprintf(stderr, "[SDL] dumped %zu bytes of rdram to %s\n", written, dump_path);
+                } else {
+                    fprintf(stderr, "[SDL] could not open %s for rdram dump\n", dump_path);
+                }
+            }
+        }
+        // Ending the run before the game has produced frames must not go through
+        // the runtime's teardown. `ultramodern::quit` while the game thread is
+        // inside `ultramodern::preinit`, or while RT64 is still building its
+        // renderer, leaves `recomp::start` blocked in `game_thread.join` or
+        // throws out of the shutdown (both seen on macOS). Leave the process
+        // instead, exactly as the `OGRE_EXIT_AFTER_MS` path does
+        // (`sdl_platform.cpp`) for the same reason: the OS reclaims the image,
+        // and the dumps above hold what a diagnostic wants.
+        if (ogre::overlay_frames_produced() < kFirstFrameCount) {
+            fprintf(stderr, "[SDL] exiting before the game produced frames; "
+                            "skipping the runtime teardown\n");
+            fflush(nullptr);
+            ogre::crash_log::flush();
+            _Exit(EXIT_SUCCESS);
+        }
+        ultramodern::quit();
+    }
+}
+
+#if defined(_WIN32) && !defined(__MINGW32__)
+// A click in a console with Quick Edit on starts a text selection, and the next
+// write to that console blocks until the selection ends. The boot log is written
+// on the thread that also pumps the game window, so that click freezes the
+// window and Windows closes the process as an application hang. Clearing the
+// mode requires ENABLE_EXTENDED_FLAGS in the same call; without that flag the
+// clear is ignored.
+static void disable_console_quick_edit() {
+    const HANDLE input = GetStdHandle(STD_INPUT_HANDLE);
+    if (input == nullptr || input == INVALID_HANDLE_VALUE) {
+        return;
+    }
+    DWORD mode = 0;
+    if (!GetConsoleMode(input, &mode)) {
+        return;
+    }
+    mode |= ENABLE_EXTENDED_FLAGS;
+    mode &= ~static_cast<DWORD>(ENABLE_QUICK_EDIT_MODE);
+    SetConsoleMode(input, mode);
+}
+#endif
+
+#if defined(__ANDROID__)
+#include <android/log.h>
+#include <thread>
+#include <unistd.h>
+
+// An Android app has no console, so stdout and stderr go nowhere. This pipes
+// both into logcat under the tag "ogrebattle64", where the [boot] log and a
+// crash report can be read with `adb logcat -s ogrebattle64`.
+static void android_redirect_stdio_to_logcat() {
+    static int fds[2];
+    if (pipe(fds) != 0) {
+        return;
+    }
+    setvbuf(stdout, nullptr, _IOLBF, 0);
+    setvbuf(stderr, nullptr, _IONBF, 0);
+    dup2(fds[1], STDOUT_FILENO);
+    dup2(fds[1], STDERR_FILENO);
+    std::thread([] {
+        char buf[1024];
+        ssize_t n;
+        while ((n = read(fds[0], buf, sizeof(buf) - 1)) > 0) {
+            if (buf[n - 1] == '\n') {
+                --n;
+            }
+            buf[n] = '\0';
+            __android_log_write(ANDROID_LOG_INFO, "ogrebattle64", buf);
+        }
+    }).detach();
+}
+#endif
+
+int main(int argc, char** argv) {
+#if defined(__ANDROID__)
+    android_redirect_stdio_to_logcat();
+    // SDL minimizes a fullscreen window that loses focus, and on Android that
+    // is SDLActivity.minimizeWindow() -> moveTaskToBack(): the app keeps
+    // running behind the phone's home screen. The launcher handing over to the
+    // game window takes the focus once, so a tap on START GAME sent the app
+    // home (developer report, 2026-10-29).
+    SDL_SetHint(SDL_HINT_VIDEO_MINIMIZE_ON_FOCUS_LOSS, "0");
+#endif
+#if defined(_WIN32) && !defined(__MINGW32__)
+    // OGRE_CONSOLE=1: allocate a console and put the [boot] log in it. The
+    // distributed build is a GUI-subsystem image, and AttachConsole below only
+    // finds a console that the parent already has, so a double-click has none.
+    // This is the Windows equivalent of running from a terminal, and the quickest
+    // way to see where a boot stops (Zelda64Recomp's Windows build has the same
+    // `--show-console` switch). It never runs unless the variable is set.
+    if (getenv("OGRE_CONSOLE") != nullptr && GetConsoleWindow() == nullptr && AllocConsole()) {
+        FILE* console = nullptr;
+        freopen_s(&console, "CONIN$", "r", stdin);
+        freopen_s(&console, "CONOUT$", "w", stdout);
+        freopen_s(&console, "CONOUT$", "w", stderr);
+        SetConsoleOutputCP(CP_UTF8);
+        disable_console_quick_edit();
+    }
+    // A developer who runs the .exe from a terminal expects the [boot] log there,
+    // and AttachConsole gives it to them without ever creating a window: it
+    // attaches only when the parent already has a console (a double-click from
+    // Explorer has none, so it fails and is ignored). This runs before
+    // crash_log::install so the capture forwards to the console like any other
+    // terminal. An inherited redirection (`> run.log`) is kept: freopening
+    // CONOUT$ over it would send the log to the parent's console instead of
+    // the file the caller asked for.
+    else if (GetFileType(GetStdHandle(STD_ERROR_HANDLE)) != FILE_TYPE_DISK &&
+             GetFileType(GetStdHandle(STD_ERROR_HANDLE)) != FILE_TYPE_PIPE &&
+             AttachConsole(ATTACH_PARENT_PROCESS)) {
+        FILE* console = nullptr;
+        freopen_s(&console, "CONOUT$", "w", stdout);
+        freopen_s(&console, "CONOUT$", "w", stderr);
+        disable_console_quick_edit();
+    }
+#endif
+
+    // --- crash reporting -----------------------------------------------------
+    // Capture stdout/stderr and arm the fatal handlers before anything else, so
+    // a crash anywhere in the boot still leaves `error.log` beside the
+    // executable. The path is re-pointed at the resolved config directory once
+    // that is known (below); the two differ only when the executable's own
+    // directory is read-only.
+    ogre::crash_log::install(ogre::executable_directory());
+
+    // Read the user's OGRE_CAPTURE_PRESENT once, before the runtime creates its
+    // present thread. The console's `snap` command toggles the presented-frame
+    // capture through ogre_present_capture_path() and not through the
+    // environment: the UCRT's putenv copies the string it is given, so the old
+    // install-and-mangle entry stayed enabled on Windows and RT64 read a buffer
+    // destination as a texture on the first present (session 107). See the block
+    // comment in sdl_platform.cpp.
+    ogre::console::init_capture_env();
+
+    // OGRE_SMOKE=1: prove that the packaged binary loads and reaches main, then
+    // exit 0. `tools/smoke-dist.sh` runs this on the machine that built the
+    // package, so a loader failure (a missing DLL beside the .exe) or a broken
+    // entry point fails the release instead of reaching a player as "nothing
+    // happens" (session 94). SDL is attempted and reported, but a hosted runner
+    // with no display or GPU must not fail the package for that, so the result
+    // does not change the exit code.
+    if (getenv("OGRE_SMOKE") != nullptr) {
+        fprintf(stderr, "[smoke] main reached\n");
+        // The capture must be off unless the player set the variable; a stale
+        // entry is what crashed the v0.4.0 Windows build on the first present.
+        // smoke-dist.sh asserts this line.
+        const char* capture_path = ogre::console::ogre_present_capture_path();
+        fprintf(stderr, "[smoke] capture path: %s\n",
+                capture_path != nullptr ? capture_path : "(unset)");
+        if (ogre::init_sdl()) {
+            fprintf(stderr, "[smoke] sdl ok\n");
+            ogre::shutdown_sdl(ogre::g_platform);
+        } else {
+            fprintf(stderr, "[smoke] sdl unavailable (not a failure)\n");
+        }
+        fflush(nullptr);
+        ogre::crash_log::flush();
+        return EXIT_SUCCESS;
+    }
+
+    // OGRE_CRASH_TEST=<segv|bus|abrt|fpe|ill>: raise that signal now, so a
+    // packaged build's error.log can be checked without provoking a real crash.
+    if (const char* crash = getenv("OGRE_CRASH_TEST")) {
+        int sig = 0;
+        if (strcmp(crash, "segv") == 0) sig = SIGSEGV;
+        else if (strcmp(crash, "abrt") == 0) sig = SIGABRT;
+        else if (strcmp(crash, "fpe") == 0) sig = SIGFPE;
+        else if (strcmp(crash, "ill") == 0) sig = SIGILL;
+#ifdef SIGBUS
+        else if (strcmp(crash, "bus") == 0) sig = SIGBUS;
+#endif
+        if (sig != 0) {
+            fprintf(stderr, "[boot] OGRE_CRASH_TEST=%s: raising signal %d\n", crash, sig);
+            // Let the capture threads drain the line above into the ring before
+            // the report is written; otherwise the smoke test's check of the
+            // report races them.
+            std::fflush(nullptr);
+            std::this_thread::sleep_for(std::chrono::milliseconds(50));
+            std::raise(sig);
+        }
+    }
+
+    // --- SDL + window --------------------------------------------------------
+    fprintf(stderr, "[boot] OB64: Another World %s\n", ogre::VERSION_TEXT);
+    fprintf(stderr, "[boot] init_sdl...\n");
+    if (!ogre::init_sdl()) {
+        // No window exists yet, so without this a failed boot is indistinguishable
+        // from "the program does nothing" (no console, no file).
+        ogre::report_boot_failure(std::string("SDL could not start: ") + SDL_GetError());
+        return EXIT_FAILURE;
+    }
+    // OGRE_TAP_MS / OGRE_EXIT_AFTER_MS make a run self-driving and bounded (see
+    // sdl_platform.hpp); both are off unless set.
+    ogre::configure_automation(ogre::g_platform);
+
+    // OGRE_PROFILE=1: sample every game thread's current recompiled function so
+    // a "busy but not rendering" stall can be attributed to real work.
+    if (getenv("OGRE_PROFILE") != nullptr) {
+        ultramodern::debug_profile_start();
+    }
+
+    // OGRE_COVER=1: census which recompiled functions a run enters (the entry
+    // counters only, no sampling thread). tools/recompcov.py joins the dump with
+    // the port's registered entries, so "how much of the game did this run
+    // execute?" is a number.
+    if (getenv("OGRE_COVER") != nullptr) {
+        ultramodern::debug_cover_start();
+    }
+
+    fprintf(stderr, "[boot] window ok\n");
+
+    // --- runtime config path ------------------------------------------------
+    // The config dir is where the runtime keeps the ROM it stored, the battery
+    // save and mods. A distributable build keeps all of it in the executable's
+    // own folder, so `saves/<game id>.bin` lands right beside the app;
+    // OGRE_PREF_DIR still overrides (the test harnesses use it), and a
+    // read-only install location falls back to the platform preference dir.
+    const std::filesystem::path pref_dir = ogre::resolve_pref_dir();
+    // error.log follows the save: the executable's own directory, unless it is
+    // read-only and the config directory fell back to the platform preference
+    // directory.
+    ogre::crash_log::set_directory(pref_dir);
+    recomp::register_config_path(pref_dir);
+    // Player-editable controller bindings live beside the save file
+    // (`controls.cfg`). A missing file leaves the built-in map.
+    ogre::load_input_map(pref_dir);
+    // The player's game speed (`settings.cfg`) is applied to the runtime here,
+    // before the game starts; `OGRE_SPEED` overrides it for a developer run.
+    ogre::load_settings(pref_dir);
+    ogre::war_director::init(pref_dir);
+    // Song replacement (`music/<n>.wav`, app/features/music_replace.hpp).
+    ogre::music_replace::init(pref_dir);
+    // The HD-background pack (`mods/backgrounds/`) is read here, before the
+    // game boots, and is a no-op when no pack is installed. The generated
+    // njpeg readback calls `ogre_hd_background()` for every pass it copies.
+    ogre::hd_backgrounds_init(pref_dir);
+    fprintf(stderr, "[boot] config path ok: %s\n", pref_dir.string().c_str());
+
+    // --- game registration ----------------------------------------------------
+    recomp::GameEntry entry;
+    entry.rom_hash = ogre::ROM_HASH;
+    entry.internal_name = std::string(ogre::INTERNAL_NAME);
+    entry.display_name = std::string(ogre::DISPLAY_NAME);
+    entry.game_id = std::u8string(ogre::GAME_ID);
+    // The id mods target. `recomp::register_game` registers it with the runtime's
+    // mod system, and `wait_for_game_started` loads the enabled mods only when
+    // this is non-empty (librecomp/src/recomp.cpp). It stayed empty until the mod
+    // system was wired up, so every mod in `mods/` was opened, parsed and thrown
+    // away.
+    entry.mod_game_id = std::string(ogre::MOD_GAME_ID);
+    entry.entrypoint_address = ogre::ENTRYPOINT_ADDRESS;
+    entry.entrypoint = recomp_entrypoint;
+    // Register streamed overlays A/B/C after init_overlays() clears the map,
+    // then arm the streamed-overlay bank swap (records the game DMA's into
+    // overlay C's RAM from a different bank — see bank_overlays.cpp).
+    entry.on_init_callback = [](uint8_t* rdram, recomp_context* ctx) {
+        // ROM patches (text fixes, translations) go in before any game DMA.
+        ogre::apply_rom_patches(ogre::resolve_pref_dir());
+        ogre::register_streamed_overlays();
+        ogre::register_bank_overlays();
+    };
+    // OB64's save is a battery-backed cartridge save, and the chip is **SRAM**
+    // (32 KiB). Evidence, session 66:
+    //   * mupen64plus's game database gives SaveType=SRAM for this exact ROM
+    //     (CRC 0ADAECA7 B17F9795, entry EBB4B4D2808DF427AAA3085A41B8A954),
+    //     with Mempak=Yes for the unrelated Controller Pak copy/backup feature.
+    //   * The game's own code: func_8008A040 builds the OSPiHandle with
+    //     baseAddress 0xA8000000 (the SRAM window) and func_8008A0F0 (its DMA
+    //     wrapper) uses it. The boot accessors func_80074CF0.. read the whole
+    //     0x8000 bytes in 256-byte DMAs at device offsets 0..0x7F00, and the
+    //     commit func_80074C58 writes the whole image back in 256-byte DMAs with
+    //     direction 1. Save slots are 0x1850 (6224) bytes at offset 0x10.
+    //   * No EEPROM/FlashRAM command protocol is present (osFlashInit /
+    //     osEepromProbe are never called; there is no FlashRAM command DMA).
+    // The DMA path is the game's own non-bridged func_8008BC40 -> D_800AA408
+    // queue; librecomp/src/pi.cpp's inline PI handler resolves the device from
+    // the OSPiHandle stored in the OSIoMesg (see init_pi_manager).
+    entry.save_type = recomp::SaveType::Sram;
+    entry.is_enabled = true;
+    entry.has_compressed_code = false;
+
+    recomp::register_game(entry);
+    fprintf(stderr, "[boot] game registered\n");
+
+    // --- mods -----------------------------------------------------------------
+    // Create `<config>/mods` and `<config>/mod_config`, then open every mod in
+    // `mods/` and apply `mods.json`. `recomp::start` repeats both calls before it
+    // boots (librecomp/src/recomp.cpp), which is safe: `scan_mod_folder` starts
+    // with `close_mods()`, and the second pass re-reads `mods.json`. Scanning
+    // here is what lets the start screen list the installed mods and write a
+    // toggle before the game starts.
+    recomp::mods::initialize_mods();
+    recomp::mods::scan_mods();
+    const std::vector<recomp::mods::ModDetails> installed_mods =
+        recomp::mods::get_all_mod_details(entry.mod_game_id);
+    fprintf(stderr, "[boot] %zu mod(s) installed in %s\n", installed_mods.size(),
+            recomp::mods::get_mods_directory().string().c_str());
+
+    // --- base overlays (entry + main sections) --------------------------------
+    ogre::register_base_overlays();
+    fprintf(stderr, "[boot] overlays registered\n");
+
+    // --- ROM selection --------------------------------------------------------
+    // Order: an explicit argument, OGRE_ROM, a ROM in the package's roms/
+    // folder or next to the executable, the copy the runtime stored on a
+    // previous run, the repo's assets/ (development), then the start screen.
+    std::filesystem::path rom_path;
+    if (argc > 1) {
+        rom_path = argv[1];
+    }
+    else if (const char* env_rom = getenv("OGRE_ROM"); env_rom != nullptr && env_rom[0] != '\0') {
+        rom_path = env_rom;
+    }
+
+    std::u8string game_id = entry.game_id;
+    const bool explicit_rom = !rom_path.empty();
+    std::string launcher_error;
+    bool rom_selected = false;
+
+    // Every dump in roms/ is tried until one is the USA Rev A, so the file name
+    // does not matter and a second, wrong dump beside it is skipped. When none
+    // fits, the first one's reason goes to the start screen (a wrong revision
+    // used to end the process before any window opened).
+    if (!explicit_rom && !launcher_forced()) {
+        for (const std::filesystem::path& candidate : ogre::find_exe_roms(ogre::executable_directory())) {
+            fprintf(stderr, "[boot] trying rom %s\n", candidate.string().c_str());
+            const auto result = recomp::select_rom(candidate, game_id);
+            if (result == recomp::RomValidationError::Good) {
+                rom_path = candidate;
+                rom_selected = true;
+                break;
+            }
+            if (launcher_error.empty()) {
+                launcher_error = rom_error_text(result, candidate.filename().string());
+            }
+        }
+    }
+
+    if (!explicit_rom && !rom_selected) {
+        const std::filesystem::path stored = pref_dir / entry.stored_filename();
+        std::error_code exists_ec;
+        if (std::filesystem::is_regular_file(stored, exists_ec)) {
+            // The runtime stored (and hash-checked) this ROM on an earlier run,
+            // so booting it directly is what makes the second launch skip the
+            // start screen. If it no longer validates, select_rom deletes it.
+            rom_path = stored;
+        }
+        else if (std::filesystem::exists("assets/ogre64.z64")) {
+            rom_path = "assets/ogre64.z64";
+        }
+    }
+
+    // Validates and stores a candidate ROM; empty string means success. The
+    // start screen calls this for every click/drop, so a wrong file is a
+    // message on the screen rather than a process exit.
+    auto accept_rom = [&game_id](const std::filesystem::path& candidate) -> std::string {
+        auto chosen = recomp::select_rom(candidate, game_id);
+        if (chosen == recomp::RomValidationError::Good) {
+            std::fprintf(stderr, "[boot] rom ok: %s\n", candidate.string().c_str());
+            return {};
+        }
+        return rom_error_text(chosen, candidate.string());
+    };
+
+    if (!rom_path.empty() && !rom_selected) {
+        fprintf(stderr, "[boot] selecting rom %s\n", rom_path.string().c_str());
+        const auto result = recomp::select_rom(rom_path, game_id);
+        if (result != recomp::RomValidationError::Good) {
+            const std::string message = rom_error_text(result, rom_path.string());
+            if (explicit_rom) {
+                fprintf(stderr, "%s\n", message.c_str());
+                return EXIT_FAILURE;
+            }
+            // The remembered ROM is unusable now: show the start screen with
+            // the reason instead of guessing.
+            fprintf(stderr, "[boot] stored rom unusable (%s); showing the launcher\n",
+                    message.c_str());
+            launcher_error = message;
+            rom_path.clear();
+        }
+        else {
+            fprintf(stderr, "[boot] rom ok\n");
+        }
+    }
+
+    const bool shift_start = shift_held_at_start();
+    if (shift_start) {
+        fprintf(stderr, "[boot] Shift held: opening the start screen\n");
+    }
+    if (rom_path.empty() || (!installed_mods.empty() && !mod_test_run()) || launcher_forced() || shift_start) {
+        // The start screen is the whole interface: it returns the path of a ROM
+        // it has already validated, or empty if the user closed the window.
+        //
+        // It also owns the mod toggles, and for that reason it is shown even when
+        // a ROM is ready. A vanilla install (no mods in `mods/`) still boots
+        // straight away, so the "put the ROM next to the app and launch" flow is
+        // unchanged; an install with mods gets one screen where the player can
+        // turn them off. `OGRE_LAUNCHER=1` forces the screen, and a command-line
+        // ROM still boots directly when nothing is installed.
+        ogre::LauncherContext context;
+        context.pref_dir = pref_dir;
+        context.initial_error = launcher_error;
+        context.ready_rom = rom_path;
+        context.mod_game_id = std::string(ogre::MOD_GAME_ID);
+        context.accept_rom = accept_rom;
+        rom_path = ogre::run_launcher(context);
+        if (rom_path.empty()) {
+            fprintf(stderr, "[boot] no ROM selected; exiting\n");
+            return EXIT_SUCCESS;
+        }
+    }
+
+    // --- window for the game ---------------------------------------------------
+    // The start screen owned a window of its own; the game gets a fresh one so
+    // the window flags (Metal/Vulkan) and the renderer attach to a clean
+    // surface.
+    fprintf(stderr, "[boot] create_window...\n");
+    auto window_handle = ogre::create_window(ogre::g_platform, "OB64: Another World");
+    if (ogre::g_platform.window == nullptr) {
+        ogre::report_boot_failure(std::string("The game window could not be created: ") +
+                                  SDL_GetError());
+        return EXIT_FAILURE;
+    }
+    fprintf(stderr, "[boot] window ok\n");
+
+    // --- in-game overlay --------------------------------------------------------
+    // The Esc panel is a borderless window placed over the game window, so it is
+    // set up once the window exists and before any frame is presented.
+    ogre::overlay_init(ogre::g_platform, pref_dir, std::string(ogre::MOD_GAME_ID));
+    // The speed badge is positioned over the game window, so it is initialized
+    // beside the overlay. It creates no window of its own until the speed
+    // changes.
+    ogre::speed_badge_init(ogre::g_platform.window);
+    ogre::button_legend_init(ogre::g_platform.window);
+#ifdef OGRE_HAVE_RMLUI
+    // RmlUi screens (rml_ui.hpp): the render hooks must be in place before
+    // RT64 is created. The documents live in ui/ next to the executable.
+    {
+        char* base = SDL_GetBasePath();
+        const std::filesystem::path exe_dir = base != nullptr ? std::filesystem::path(base) : std::filesystem::path(".");
+        SDL_free(base);
+        ogre::rml_ui::install(exe_dir / "ui");
+    }
+#endif
+
+    // --- OGRE_SAVE: start from a save file as the battery ----------------------
+    // The runtime loads `<config>/saves/<game id>.bin` on the game's first SRAM
+    // access, which happens after recomp::start, so install it here. Accepts the
+    // port's own 32 KiB image, an emulator wrapper of it, a DexDrive .N64
+    // Controller Pak dump or a bare pak; see save_import.cpp.
+    ogre::apply_ogre_save(pref_dir, game_id, rom_path);
+
+    // --- runtime configuration --------------------------------------------------
+    recomp::Configuration cfg;
+    cfg.project_version = recomp::Version(ogre::VERSION_MAJOR, ogre::VERSION_MINOR, ogre::VERSION_PATCH);
+    cfg.window_handle = window_handle;
+    cfg.rsp_callbacks = ogre::make_rsp_callbacks();
+    cfg.renderer_callbacks = {.create_render_context = ogre::create_renderer};
+    cfg.audio_callbacks = ogre::make_audio_callbacks();
+    cfg.input_callbacks = ogre::make_input_callbacks();
+    cfg.gfx_callbacks = {.create_gfx = nullptr, .create_window = nullptr, .update_gfx = update_gfx};
+    cfg.events_callbacks = ogre::make_events_callbacks();
+    cfg.error_handling_callbacks = ogre::make_error_handling_callbacks();
+    cfg.threads_callbacks = ogre::make_threads_callbacks();
+
+    // Hardware events that the game polls at a fixed cadence (VI retrace, AI)
+    // must not be dropped when the destination queue is momentarily full: the
+    // game's VI manager processes one retrace per wake, and a dropped retrace
+    // stalls the boot's frame state machine. Requeue them so the next drain
+    // retries the delivery instead of losing it.
+    ultramodern::MessageQueueControl mqc;
+    // VI retraces are NOT requeued: requeuing a dropped retrace keeps the
+    // external-message backlog alive, which floods the VI-manager's queue so
+    // it never blocks on recv — starving every lower-priority thread parked in
+    // the running queue (the cooperative scheduler only preempts to a strictly
+    // higher priority). On real hardware retraces are paced by the VI
+    // interrupt; dropping a retrace when the queue is momentarily full just
+    // makes the game wait for the next one.
+    mqc.requeue_vi = false;
+    mqc.requeue_ai = false;
+    ultramodern::set_message_queue_control(mqc);
+
+    // --- boot -------------------------------------------------------------------
+    // Start the runtime first: it spawns the VI/audio/gfx/threads and the game
+    // thread (which waits for the game status). Then start the game from a
+    // separate thread so the VI thread has already entered its dummy-mode phase
+    // (start_game before recomp::start skips set_dummy_vi and the VI thread
+    // crashes on a null mode).
+    fprintf(stderr, "[boot] recomp::start...\n");
+
+    std::thread game_starter{[game_id] {
+        ultramodern::sleep_milliseconds(500);
+        fprintf(stderr, "[boot] start_game...\n");
+        recomp::start_game(game_id, "");
+    }};
+
+    recomp::start(cfg);  // blocks until ultramodern::quit()
+
+    game_starter.join();
+    ogre::overlay_shutdown();
+    ogre::speed_badge_shutdown();
+    ogre::button_legend_shutdown();
+    ogre::shutdown_sdl(ogre::g_platform);
+    // The runtime does not join the game's own threads, so they are still
+    // running recompiled code here. Running the C++ static destructors (what
+    // `return` does next) with them live is a race, and it is what made closing
+    // the window freeze the process (the runtime no longer unmaps RDRAM on
+    // quit; see recomp::start). Leave now instead. crash_log::flush() drains
+    // the captured log first, because _Exit skips the atexit handler.
+    ogre::crash_log::flush();
+    _Exit(EXIT_SUCCESS);
+}
+
+#if defined(_WIN32) && !defined(__MINGW32__)
+// The distributed Windows build is a GUI-subsystem binary (WIN32_EXECUTABLE in
+// app/CMakeLists.txt) so it allocates no console window. That subsystem's CRT
+// entry point is WinMainCRTStartup, which calls WinMain; the app keeps its own
+// `main`, so forward. MinGW is not compiled here: its CRT already forwards
+// WinMain to main, and a second definition would be a duplicate symbol.
+int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
+    return main(__argc, __argv);
+}
+#endif
+

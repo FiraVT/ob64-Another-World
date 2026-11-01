@@ -1,0 +1,22 @@
+diff --git a/src/main.cpp b/src/main.cpp
+index 40c5c10..595e790 100644
+--- a/src/main.cpp
++++ b/src/main.cpp
+@@ -475,6 +475,16 @@ int main(int argc, char** argv) {
+             }
+         }
+ 
++        // The symbol file already carries each function's size; mark the ones the
++        // config's function_sizes names, so a call into an extended body resolves
++        // to its owner as it does in ELF mode (find_containing_size_override).
++        for (const auto& func_size : config.manual_func_sizes) {
++            auto find_it = context.functions_by_name.find(func_size.func_name);
++            if (find_it != context.functions_by_name.end()) {
++                context.functions[find_it->second].has_size_override = true;
++            }
++        }
++
+ 
+         if (config.has_entrypoint) {
+             bool found_entrypoint = false;
+

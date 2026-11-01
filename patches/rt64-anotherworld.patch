@@ -1,0 +1,228 @@
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index 3d4997c..89cfbef 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -69,9 +69,21 @@ set(ZSTD_LEGACY_SUPPORT OFF)
+ set(ZSTD_BUILD_STATIC ON)
+ set(ZSTD_BUILD_SHARED OFF)
+ 
+-add_subdirectory(src/tools/file_to_c)
++# Android is cross-compiled from a desktop host: the shader compiler and the
++# file_to_c generator must be host binaries, not ones built for the device.
++if (ANDROID)
++    if (CMAKE_HOST_WIN32)
++        set (DXC "${PROJECT_SOURCE_DIR}/src/contrib/dxc/bin/x64/dxc.exe")
++    endif()
++    add_executable(file_to_c IMPORTED GLOBAL)
++    set_target_properties(file_to_c PROPERTIES IMPORTED_LOCATION "${RT64_HOST_FILE_TO_C}")
++else()
++    add_subdirectory(src/tools/file_to_c)
++endif()
+ add_subdirectory(src/contrib/re-spirv)
+-add_subdirectory(src/contrib/nativefiledialog-extended)
++if (NOT ANDROID)
++    add_subdirectory(src/contrib/nativefiledialog-extended)
++endif()
+ add_subdirectory(src/contrib/zstd/build/cmake)
+ 
+ if (CMAKE_SYSTEM_NAME MATCHES "Linux" AND RT64_SDL_WINDOW_VULKAN)
+@@ -295,6 +307,8 @@ if (WIN32 AND NOT DEFINED SDL2_DIR)
+     set(SDL2_INCLUDE_DIRS "${PROJECT_SOURCE_DIR}/src/contrib/mupen64plus-win32-deps/SDL2-2.26.3/include")
+     set(SDL2_LIBRARIES "SDL2" "SDL2main")
+     link_directories("${PROJECT_SOURCE_DIR}/src/contrib/mupen64plus-win32-deps/SDL2-2.26.3/lib/x64")
++elseif (ANDROID AND TARGET SDL2::SDL2)
++    # The Android app builds SDL2 from source and sets SDL2_INCLUDE_DIRS.
+ else()
+     find_package(SDL2 REQUIRED)
+ endif()
+@@ -447,13 +461,17 @@ set_target_properties(rt64 PROPERTIES PREFIX "")
+ 
+ # Add common libraries.
+ target_link_libraries(rt64 re-spirv)
+-target_link_libraries(rt64 nfd)
++if (NOT ANDROID)
++    target_link_libraries(rt64 nfd)
++endif()
+ target_link_libraries(rt64 libzstd_static)
+ target_link_libraries(rt64 plume)
+ 
+ # Add tools.
+-add_subdirectory(src/tools/texture_hasher)
+-add_subdirectory(src/tools/texture_packer)
++if (NOT ANDROID)
++    add_subdirectory(src/tools/texture_hasher)
++    add_subdirectory(src/tools/texture_packer)
++endif()
+ 
+ # Add any Apple-specific source files and libraries
+ if (APPLE)
+diff --git a/src/gui/rt64_file_dialog.cpp b/src/gui/rt64_file_dialog.cpp
+index 72faede..8c865f1 100644
+--- a/src/gui/rt64_file_dialog.cpp
++++ b/src/gui/rt64_file_dialog.cpp
+@@ -6,6 +6,22 @@
+ 
+ #include <cassert>
+ 
++#if defined(__ANDROID__)
++
++// Android has no desktop file dialog; the developer-mode tools that use one
++// just get an empty path.
++namespace RT64 {
++    std::atomic<bool> FileDialog::isOpen = false;
++
++    void FileDialog::initialize() {}
++    void FileDialog::finish() {}
++    std::filesystem::path FileDialog::getDirectoryPath() { return {}; }
++    std::filesystem::path FileDialog::getOpenFilename(const std::vector<FileFilter> &) { return {}; }
++    std::filesystem::path FileDialog::getSaveFilename(const std::vector<FileFilter> &) { return {}; }
++};
++
++#else
++
+ #include <nfd.h>
+ 
+ namespace RT64 {
+@@ -76,4 +92,6 @@ namespace RT64 {
+         isOpen = false;
+         return path;
+     }
+-};
+\ No newline at end of file
++};
++
++#endif
+diff --git a/src/hle/rt64_application_window.cpp b/src/hle/rt64_application_window.cpp
+index 08f83e5..ba38420 100755
+--- a/src/hle/rt64_application_window.cpp
++++ b/src/hle/rt64_application_window.cpp
+@@ -11,7 +11,7 @@
+ #if defined(_WIN32)
+ #   include <Windows.h>
+ #   include <ShellScalingAPI.h>
+-#elif defined(__linux__)
++#elif defined(__linux__) && !defined(__ANDROID__)
+ #   define Status int
+ #   if !defined(RT64_SDL_WINDOW_VULKAN)
+ #      include <X11/extensions/Xrandr.h>
+@@ -103,8 +103,6 @@ namespace RT64 {
+         bounds.top = rect.top;
+         bounds.width = rect.right - rect.left;
+         bounds.height = rect.bottom - rect.top;
+-#   elif defined(__ANDROID__)
+-        static_assert(false && "Android unimplemented");
+ #   elif defined(__linux__) || defined(__APPLE__)
+         if (SDL_VideoInit(nullptr) != 0) {
+             printf("Failed to init SDL2 video: %s\n", SDL_GetError());
+@@ -148,7 +146,7 @@ namespace RT64 {
+ #   elif defined(RT64_SDL_WINDOW_VULKAN)
+         windowHandle = sdlWindow;
+ #   elif defined(__ANDROID__)
+-        static_assert(false && "Android unimplemented");
++        windowHandle = wmInfo.info.android.window;
+ #   elif defined(__linux__)
+         windowHandle.display = wmInfo.info.x11.display;
+         windowHandle.window = wmInfo.info.x11.window;
+@@ -294,6 +292,9 @@ namespace RT64 {
+         }
+ 
+         refreshRate = displayMode.refresh_rate;
++#   elif defined(__ANDROID__)
++        // The display's own rate is not exposed through the native window.
++        refreshRate = 60;
+ #   elif defined(__linux__)
+         // Sourced from: https://stackoverflow.com/a/66865623
+         XRRScreenResources *screenResources = XRRGetScreenResources(windowHandle.display, windowHandle.window);
+@@ -349,6 +350,9 @@ namespace RT64 {
+         newWindowTop = rect.top;
+ #   elif defined(RT64_SDL_WINDOW_VULKAN)
+         SDL_GetWindowPosition(windowHandle, &newWindowLeft, &newWindowTop);
++#   elif defined(__ANDROID__)
++        newWindowLeft = 0;
++        newWindowTop = 0;
+ #   elif defined(__linux__)
+         XWindowAttributes attributes;
+         XGetWindowAttributes(windowHandle.display, windowHandle.window, &attributes);
+diff --git a/src/hle/rt64_rsp.cpp b/src/hle/rt64_rsp.cpp
+index 1da2550..fd44344 100644
+--- a/src/hle/rt64_rsp.cpp
++++ b/src/hle/rt64_rsp.cpp
+@@ -14,6 +14,20 @@
+ 
+ #include "rt64_interpreter.h"
+ #include "rt64_state.h"
++#include <atomic>
++
++// OGRE: mission-field frame interpolation (docs/notes-frame-interpolation.md in
++// the port). The app turns this on while scene 0x03 runs with FRAME RATE set to
++// DISPLAY. The game builds its camera in the projection stack (bank N
++// func_ovlN_801C0D20: a G_MTX projection load of guPerspective, then a
++// projection multiply of guLookAt), so each projection load gets a fixed id and
++// RT64 pairs a frame's camera only with the previous frame's camera of the same
++// id. Model matrices stay G_EX_ID_AUTO, RT64's own matching.
++static std::atomic<bool> ogreFieldTags{ false };
++
++extern "C" void rt64_ogre_set_field_tags(bool enabled) {
++    ogreFieldTags.store(enabled, std::memory_order_relaxed);
++}
+ 
+ //#define LOG_SPECIAL_MATRIX_OPERATIONS
+ 
+@@ -187,7 +201,26 @@ namespace RT64 {
+         modelViewProjChanged = true;
+     }
+ 
++    // OGRE: give the projection load the id kOgreCameraId + n, where n counts
++    // the projection loads of this display list. The field's 3D camera is the
++    // first one; a later load (an orthographic 2D pass) gets its own id, so the
++    // two are never interpolated into each other when the number of passes
++    // changes between frames.
++    void RSP::ogreTagProjection(uint8_t params) {
++        constexpr uint32_t kOgreCameraId = 0x0B640000;
++        if (!ogreFieldTags.load(std::memory_order_relaxed) || !(params & projMask) || !(params & loadMask)) {
++            return;
++        }
++
++        const uint32_t id = kOgreCameraId + extended.ogreProjectionLoads++;
++        matrixId(id, false, true, false,
++            G_EX_COMPONENT_INTERPOLATE, G_EX_COMPONENT_INTERPOLATE, G_EX_COMPONENT_INTERPOLATE, G_EX_COMPONENT_INTERPOLATE, G_EX_COMPONENT_INTERPOLATE,
++            G_EX_COMPONENT_SKIP, G_EX_COMPONENT_SKIP, G_EX_COMPONENT_AUTO, G_EX_COMPONENT_AUTO,
++            G_EX_ORDER_LINEAR, G_EX_ASPECT_AUTO, G_EX_EDIT_NONE, false, false);
++    }
++
+     void RSP::matrix(uint32_t address, uint8_t params) {
++        ogreTagProjection(params);
+         const uint32_t rdramAddress = fromSegmentedMasked(address);
+         const FixedMatrix *fixedMatrix = reinterpret_cast<FixedMatrix *>(state->fromRDRAM(rdramAddress));
+         const hlslpp::float4x4 floatMatrix = fixedMatrix->toMatrix4x4();
+@@ -1293,6 +1326,7 @@ namespace RT64 {
+         extended.baseSegmentAddresses = {};
+         extended.vertexSegmentEnabled = {};
+         extended.forceBranch = false;
++        extended.ogreProjectionLoads = 0;
+     }
+ 
+     void RSP::setGBI(GBI *gbi) {
+diff --git a/src/hle/rt64_rsp.h b/src/hle/rt64_rsp.h
+index 3402883..e48264f 100644
+--- a/src/hle/rt64_rsp.h
++++ b/src/hle/rt64_rsp.h
+@@ -238,6 +238,9 @@ namespace RT64 {
+             std::array<uint32_t, G_EX_VERTEX_MAX> baseSegmentAddresses;
+             std::array<bool, G_EX_VERTEX_MAX> vertexSegmentEnabled;
+             bool forceBranch;
++            // OGRE: projection loads tagged so far in this display list (see
++            // ogreTagProjection in rt64_rsp.cpp).
++            uint32_t ogreProjectionLoads;
+         } extended;
+ 
+         RSP(State *state);
+@@ -252,6 +255,7 @@ namespace RT64 {
+         void matrixCommon(const hlslpp::float4x4 &floatMatrix, uint32_t address, uint8_t params);
+         void matrix(uint32_t address, uint8_t params);
+         void matrixFloat(uint32_t address, uint8_t params);
++        void ogreTagProjection(uint8_t params);
+         void popMatrix(uint32_t count);
+         void pushProjectionMatrix();
+         void popProjectionMatrix();
+

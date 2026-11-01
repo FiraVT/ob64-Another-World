@@ -1,0 +1,9 @@
+{
+  "_comment": "An example add-on: a mod that needs another mod. Copy this folder and example-mod into user-content/ to try it. Without example-mod, this mod is refused and the MODS tab says why.",
+  "id": "example-mod-addon",
+  "name": "Example Mod Add-on",
+  "version": "1.0",
+  "author": "OB64: Another World",
+  "description": "Builds on Example Mod: its Iron Soldiers also get more VIT. It requires example-mod, so it always loads after it and wins where both change the same record.",
+  "requires": ["example-mod"]
+}

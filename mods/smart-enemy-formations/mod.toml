@@ -1,0 +1,46 @@
+# Build definition for the "Smart Enemy Formations" mod.
+#
+# RecompModTool takes this file and the ELF named in `[inputs]` and writes a
+# `.nrm` (the packaged mod the client loads). `tools/build-example-mods.sh`
+# runs the whole thing.
+
+[manifest]
+
+id = "ogre_smart_enemy_formations"
+
+version = "1.0.0"
+
+display_name = "Smart Enemy Formations"
+
+description = """
+Enemy units keep their members, but each member stands in the row its class
+fights best from: fighters and knights in front, archers in the middle, mages
+and clerics in the back. The row is chosen from the game's own attack counts
+for each class, so no class is special-cased. Units are arranged once when
+they appear, never during a battle."""
+
+short_description = "Enemies stand in their best rows."
+
+authors = [ "Ogre Battle 64 Recomp" ]
+
+game_id = "ogrebattle64"
+
+minimum_recomp_version = "0.1.0"
+
+dependencies = [ ]
+
+native_libraries = [ ]
+
+enabled_by_default = false
+
+[inputs]
+
+elf_path = "build/mod.elf"
+
+mod_filename = "smart-enemy-formations"
+
+func_reference_syms_file = "../reference/dump.toml"
+data_reference_syms_files = [ "../reference/data_dump.toml" ]
+
+additional_files = [ ]
+

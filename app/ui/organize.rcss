@@ -1,0 +1,499 @@
+/* The Organize screens (organize.rml) in the game's style: parchment windows
+   with a light bevel and a dark outline, labels set into the top border, blue
+   name bars, tan/blue checker boards over a dark field. RmlUi's subset of CSS
+   (flexbox, no grid); this render interface has no transforms, gradients or
+   shadows, so bevels are nested borders. Sizes use dp so they scale. */
+
+body {
+    font-family: LatoLatin;
+    font-size: 15dp;
+    color: #2b2414;
+    width: 100%;
+    height: 100%;
+    background-color: #1a2236;
+}
+
+div, button { display: block; }
+span { display: inline; }
+b { font-weight: bold; }
+
+/* A fixed 1280x720 dp canvas, centred; rml_ui.cpp scales dp so it fits the
+   window, and the body's backdrop fills any spare width or height. */
+#screen {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    width: 1280dp;
+    height: 720dp;
+    margin-left: -640dp;
+    margin-top: -360dp;
+    box-sizing: border-box;
+    display: flex;
+    flex-direction: column;
+    padding: 14dp 20dp;
+}
+
+/* --- parchment window -------------------------------------------------- */
+.win {
+    position: relative;
+    background-color: #e9e4bb;
+    border: 4dp #c9bd82;
+    border-bottom-color: #9d915a;
+    border-right-color: #9d915a;
+    padding: 18dp 12dp 10dp;
+}
+.wintab {
+    position: absolute;
+    left: 10dp;
+    top: -13dp;
+    padding: 0 7dp;
+    background-color: #e9e4bb;
+    border: 3dp #4a4326;
+    font-size: 13dp;
+    font-weight: bold;
+    letter-spacing: 1dp;
+    text-transform: uppercase;
+}
+.wintab.static { position: relative; left: 0; top: 0; }
+.spacer { flex: 1; }
+.infoline { margin: 3dp 0; }
+.infoline.light { color: #f2eedc; }
+.muted { color: #6d6236; }
+
+/* --- top bar ------------------------------------------------------------ */
+#topbar {
+    height: 46dp;
+    padding: 0 16dp;
+    display: flex;
+    align-items: center;
+    margin-bottom: 14dp;
+}
+.brand { font-size: 22dp; font-weight: bold; margin-right: 18dp; }
+.tab, .close, .sort {
+    padding: 4dp 14dp;
+    margin-right: 6dp;
+    background-color: #d8cea6;
+    border: 2dp #b6a465;
+    font-weight: bold;
+    tab-index: auto;
+    nav: auto;
+}
+.tab:hover, .tab:focus, .close:hover, .close:focus, .sort:hover, .sort:focus { border-color: #3a4ba8; }
+.tab.active { background-color: #3a4ba8; border-color: #1f2a6e; color: #ffffff; }
+.tab.disabled { color: #a0966c; }
+.stat { margin-left: 18dp; }
+.close { margin-left: 18dp; }
+
+.page { flex: 1; display: flex; flex-direction: row; }
+
+/* --- formation: stepped boards ------------------------------------------ */
+/* Fixed column widths on the 1240dp page: flex shrinking in RmlUi squeezed
+   the side column to a sliver when the boards wrapped. */
+#boards {
+    width: 880dp;
+    flex-shrink: 0;
+    display: flex;
+    flex-wrap: wrap;
+    align-content: flex-start;
+    overflow-y: auto;
+}
+.unit {
+    width: 31%;
+    margin: 0 2% 12dp 0;
+    tab-index: auto;
+    nav: auto;
+}
+.board { padding-top: 34dp; }
+.tier { margin: 0 auto; }
+.tier.back { width: 62%; }
+.tier.middle { width: 70%; }
+.tier.front { width: 78%; }
+.tread {
+    display: flex;
+    height: 22dp;
+    border: 2dp #1a160e;
+}
+.riser {
+    height: 9dp;
+    background-color: #5c4326;
+    border: 2dp #1a160e;
+    border-top-width: 0;
+}
+.tile {
+    position: relative;
+    flex: 1;
+    background-color: #c7a46a;
+    border: 2dp #dcbf86;
+}
+.tile.dark { background-color: #3a4ba8; border-color: #4f62c4; }
+.tile { tab-index: auto; }
+.tile:hover { border-color: #ffffff; }
+.tile.picked { border-color: #f3e27a; background-color: #f3dc8a; }
+.unit.selected .tile.picked { border-color: #f3e27a; }
+.unit.selected .tile { border-color: #f3e27a; }
+
+.figure {
+    position: absolute;
+    left: 50%;
+    bottom: 40%;
+    width: 18dp;
+    height: 34dp;
+    margin-left: -9dp;
+    border: 2dp #1a160e;
+    border-radius: 7dp 7dp 2dp 2dp;
+}
+.figure.leader { border-color: #f3e27a; }
+.figure.large { width: 30dp; height: 42dp; margin-left: -15dp; }
+
+.plate {
+    display: flex;
+    align-items: center;
+    margin-top: 4dp;
+    padding: 2dp 6dp;
+    background-color: #e9e4bb;
+    border: 3dp #b6a465;
+}
+.unit.selected .plate { border-color: #d9b941; }
+.unit:hover .plate, .unit:focus .plate { border-color: #3a4ba8; }
+.num { font-size: 17dp; font-weight: bold; margin-right: 6dp; }
+.unitname { flex: 1; color: #ffffff; background-color: #3a4ba8; border: 1dp #1f2a6e; padding: 1dp 6dp; font-weight: bold; }
+.count { margin-left: 6dp; font-weight: bold; }
+
+/* Plain blocks without overflow: in RmlUi a flex item with overflow: auto
+   shrank to its narrowest content and ignored its width. */
+#formside { width: 346dp; flex-shrink: 0; margin-left: 14dp; display: block; }
+#formside .win { margin-top: 14dp; flex-shrink: 0; width: 100%; box-sizing: border-box; }
+.cmdgrid { display: flex; flex-wrap: wrap; justify-content: space-between; }
+#unitinfo { flex: 1; }
+.command {
+    width: 49%;
+    box-sizing: border-box;
+    padding: 3dp 6dp;
+    margin-bottom: 4dp;
+    background-color: #ddd3a8;
+    border: 2dp #b6a465;
+    font-size: 14dp;
+    font-weight: bold;
+    tab-index: auto;
+    nav: auto;
+}
+.command:hover, .command:focus { border-color: #3a4ba8; }
+.command.primary { background-color: #3a4ba8; border-color: #1f2a6e; color: #ffffff; }
+.notice { margin-top: 4dp; font-size: 13dp; color: #6a1e14; }
+.infotitle { font-size: 19dp; font-weight: bold; margin: 2dp 0 4dp; }
+.membercard {
+    padding: 5dp 8dp;
+    margin-top: 6dp;
+    background-color: #ddd3a8;
+    border: 2dp #b6a465;
+}
+.mname { font-weight: bold; }
+.mline { font-size: 13dp; color: #4a4130; }
+.hpbar { height: 7dp; margin-top: 3dp; background-color: #5e5530; border: 1dp #3a3220; }
+.hpfill { height: 5dp; background-color: #7fbf6a; }
+
+/* --- change class -------------------------------------------------------- */
+#roster { width: 300dp; flex-shrink: 0; box-sizing: border-box; display: block; padding-top: 10dp; }
+.rosterhead { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6dp; }
+/* RmlUi does not stretch the children of a column flexbox, so boxes that
+   should fill their column say width: 100%. */
+#cells { width: 100%; height: 570dp; overflow-y: auto; }
+/* Rows are blocks with the portrait floated left: in a flex row RmlUi shrank
+   the text column until each word wrapped. */
+.cell {
+    width: 100%;
+    box-sizing: border-box;
+    display: block;
+    min-height: 58dp;
+    padding: 3dp 8dp;
+    margin-bottom: 4dp;
+    background-color: #ddd3a8;
+    border: 2dp #b6a465;
+    tab-index: auto;
+    nav: auto;
+}
+.cell:hover, .cell:focus { border-color: #3a4ba8; }
+.cell.selected { background-color: #c9d0ef; border-color: #3a4ba8; }
+.cellname { font-weight: bold; }
+.celltext { margin-left: 52dp; padding-top: 4dp; }
+.cell .face, .membercard .face { float: left; }
+/* The game's 40x48 speaker portrait (portraits.cpp), framed; the class colour
+   behind it shows when a class has no portrait. */
+.face {
+    flex-shrink: 0;
+    width: 40dp;
+    height: 48dp;
+    margin-right: 8dp;
+    border: 2dp #3a3220;
+}
+.face.small { width: 30dp; height: 36dp; margin-right: 8dp; }
+.face.big { width: 80dp; height: 96dp; margin-right: 12dp; border-width: 3dp; }
+.portrait { width: 100%; height: 100%; }
+.membercard { display: block; min-height: 42dp; }
+.membercard .celltext { margin-left: 40dp; padding-top: 0; }
+.classhead { display: flex; flex-direction: row; align-items: center; width: 100%; }
+.classhead .celltext { flex: 1; margin-left: 0; padding-top: 0; }
+.cellclass { font-size: 13dp; color: #4a4130; }
+
+#scene { flex: 1; margin-left: 16dp; display: flex; flex-direction: column; }
+.scenetop { display: flex; margin-bottom: 14dp; }
+#stats { width: 40%; padding-top: 16dp; }
+.statrow { display: flex; align-items: center; margin: 2dp 0; }
+.sname { width: 36dp; font-weight: bold; font-size: 13dp; }
+.sbar { flex: 1; height: 10dp; margin: 0 8dp; background-color: #24361f; border: 2dp #1a160e; }
+.sfill { height: 6dp; background-color: #f6ec7a; }
+.sfill.hp { background-color: #7fbf6a; }
+.statrow b { width: 34dp; text-align: right; }
+
+#classwin { flex: 1; margin-left: 14dp; }
+.classline { display: flex; align-items: center; margin-bottom: 4dp; }
+.classname { font-size: 26dp; font-weight: bold; }
+.classcount { font-size: 22dp; font-weight: bold; }
+
+.scenemid { flex: 1; display: flex; margin-bottom: 14dp; }
+#wardrobe { position: relative; width: 120dp; margin-right: 14dp; }
+.wardrobe-top { height: 16dp; margin-left: 12dp; background-color: #c99a72; border: 3dp #4a2e1a; }
+.wardrobe-body {
+    position: relative;
+    height: 170dp;
+    margin-left: 12dp;
+    background-color: #6f93a4;
+    border: 6dp #d7b38c;
+}
+.wardrobe-door {
+    position: absolute;
+    left: 0;
+    top: 22dp;
+    width: 24dp;
+    height: 160dp;
+    background-color: #d7b38c;
+    border: 3dp #4a2e1a;
+}
+.figure.big { width: 44dp; height: 96dp; margin-left: -22dp; bottom: 8dp; border-width: 3dp; border-radius: 16dp 16dp 5dp 5dp; }
+
+#classes { flex: 1; overflow-y: auto; }
+.option {
+    display: flex;
+    align-items: center;
+    height: 38dp;
+    margin-bottom: 4dp;
+    padding: 0 8dp 0 4dp;
+    background-color: #10141fb8;
+    border: 2dp #3a4560;
+    color: #f2eedc;
+    tab-index: auto;
+    nav: auto;
+}
+.option:hover, .option:focus { border-color: #c9bd82; }
+.option.selected { background-color: #e9e4bb; border-color: #4a4326; color: #2b2414; }
+.option.locked { color: #a8a090; }
+.option.selected.locked { color: #4a4130; }
+.hand { width: 16dp; font-weight: bold; }
+.optile {
+    position: relative;
+    width: 40dp;
+    height: 36dp;
+    margin-right: 8dp;
+}
+.optile .figure.small { width: 14dp; height: 26dp; margin-left: -7dp; bottom: 6dp; }
+.optname { flex: 1; font-size: 18dp; font-weight: bold; }
+.badge {
+    width: 96dp;
+    text-align: center;
+    font-size: 13dp;
+    font-weight: bold;
+    border: 2dp;
+}
+.badge.current { background-color: #e9e4bb; border-color: #6d6236; color: #2b2414; }
+
+#sidecol { width: 200dp; margin-left: 14dp; display: flex; flex-direction: column; }
+#sidecol .win { margin-bottom: 18dp; }
+.price { text-align: right; }
+.mid-number { font-size: 20dp; font-weight: bold; }
+.suffix { font-size: 14dp; }
+
+#prompt { min-height: 70dp; }
+.prompttext { font-size: 20dp; font-weight: bold; }
+.promptnote { margin-top: 4dp; font-size: 13dp; color: #6d6236; }
+
+.pick {
+    margin: 2dp 0;
+    padding: 2dp 6dp;
+    background-color: #ddd3a8;
+    border: 2dp #b6a465;
+    tab-index: auto;
+}
+.pick:hover, .pick:focus { border-color: #3a4ba8; }
+.editstate { margin-top: 4dp; font-size: 12dp; color: #4a4130; }
+
+/* Pad and keyboard: every control takes focus and spatial navigation, and the
+   focused one is marked in the same gold as a pick. */
+.tab, .close, .sort, .unit, .tile, .pick, .option, .cell, .command { tab-index: auto; nav: auto; }
+.tile:focus { border-color: #ffffff; background-color: #e9d79a; }
+.tile.dark:focus { background-color: #6f80d8; }
+.command:focus, .pick:focus, .option:focus, .cell:focus, .tab:focus, .close:focus, .sort:focus {
+    border-color: #f3e27a;
+    background-color: #f6efc8;
+}
+.option:focus { color: #2b2414; }
+#formscroll { width: 100%; height: 650dp; overflow-y: auto; }
+.command.later { color: #a0966c; }
+
+/* RmlUi draws a scrollbar only from these rules; without them a scrolling box
+   (overflow-y: auto) gave its scrollbar the width and squeezed its contents. */
+scrollbarvertical {
+    width: 10dp;
+    margin-left: 2dp;
+}
+scrollbarvertical slidertrack { background-color: #c9bd82; }
+scrollbarvertical sliderbar { background-color: #6d6236; min-height: 24dp; }
+scrollbarvertical sliderarrowdec, scrollbarvertical sliderarrowinc { width: 0; height: 0; }
+scrollbarhorizontal { height: 0; }
+
+/* Carry Item: the stock picker under the commands, and the carried items as
+   chips in the Unit panel (click one to put it back). */
+.carrypick { margin-top: 6dp; }
+.label { font-size: 12dp; font-weight: bold; color: #6d6236; }
+.carried { margin: 2dp 0 4dp; }
+.chip {
+    display: inline-block;
+    margin: 2dp 4dp 2dp 0;
+    padding: 1dp 8dp;
+    background-color: #f3e27a;
+    border: 2dp #a8902f;
+    font-size: 13dp;
+    tab-index: auto;
+    nav: auto;
+}
+.chip:hover, .chip:focus { border-color: #3a4ba8; }
+
+/* The game's formation sprites (portraits.cpp decode_sprite, 4x nearest), standing
+   on their square: 16x24 drawn at 2x, large classes 32x28. */
+.sprite {
+    position: absolute;
+    left: 50%;
+    bottom: 30%;
+    width: 32dp;
+    height: 48dp;
+    margin-left: -16dp;
+}
+.sprite.large { width: 56dp; height: 49dp; margin-left: -28dp; }
+.sprite.leader { }
+.sprite.small { width: 24dp; height: 36dp; margin-left: -12dp; bottom: 2dp; }
+.sprite.big { width: 64dp; height: 96dp; margin-left: -32dp; bottom: 8dp; }
+
+/* Item icons (16x16 from the game, drawn at 1.5x). */
+.icon { width: 24dp; height: 24dp; margin-right: 4dp; vertical-align: middle; }
+
+/* The gold arrow over the leader, as on the game's own formation screen. */
+.leadermark {
+    position: absolute;
+    left: 50%;
+    bottom: 30%;
+    width: 18dp;
+    height: 12dp;
+    margin-left: -9dp;
+    margin-bottom: 50dp;
+}
+
+/* Soldier promotion progress in the Unit panel. */
+.soldierexp { margin: 4dp 0 6dp; }
+.expfill { height: 5dp; background-color: #e0b02c; }
+
+/* The picked member: who, their stats, and the attacks of each row with the
+   row they stand in marked. */
+.pickhead { display: block; min-height: 52dp; }
+.pickhead .face { float: left; }
+.pickhead .celltext { margin-left: 52dp; }
+.attackrow { margin-top: 2dp; padding: 1dp 6dp; font-size: 13dp; border: 1dp #d8cea6; }
+.attackrow.current { background-color: #f3e27a; border-color: #a8902f; font-weight: bold; }
+.arow { display: inline-block; width: 56dp; color: #6d6236; }
+
+/* Attack rows open to show what the attack does; the Battle Strategy picker. */
+.attackrow { tab-index: auto; nav: auto; }
+.attackrow:hover, .attackrow:focus { border-color: #a8902f; }
+.attackrow.open { background-color: #f6efc8; }
+.attackdetail { display: block; padding: 2dp 4dp 3dp 60dp; font-size: 12dp; color: #4b4328; font-weight: normal; }
+.strategypick .pick.current { background-color: #f3e27a; font-weight: bold; }
+#classes .option.ready .badge { background-color: #9fd27a; }
+
+/* Equipment, Items and Armory tabs. */
+#gearside { flex: 1; margin-left: 16dp; display: block; }
+#loadout { width: 100%; box-sizing: border-box; }
+.gearslot { display: block; padding: 5dp 8dp; margin-top: 4dp; border: 1dp #d8cea6; tab-index: auto; nav: auto; }
+.gearslot:hover, .gearslot:focus { border-color: #a8902f; }
+.gearslot.open { background-color: #f6efc8; border-color: #a8902f; }
+.gearslot.locked { color: #8a8060; }
+.gearslot .icon { vertical-align: middle; margin-right: 6dp; }
+.gearname { display: inline-block; width: 240dp; font-weight: bold; }
+.gearcat { color: #6d6236; }
+.gearchoices { display: block; margin: 6dp 0 8dp 24dp; }
+.gearchoices .pick.current { background-color: #f3e27a; font-weight: bold; }
+#itemlist, #armorylist { flex: 1; box-sizing: border-box; display: block; }
+#itemscroll, #armoryscroll { width: 100%; height: 520dp; overflow-y: auto; }
+.itemhead { display: block; padding: 4dp 8dp; color: #6d6236; font-size: 13dp; border-bottom: 1dp #d8cea6; }
+.itemrow, .setrow { display: block; padding: 4dp 8dp; border-bottom: 1dp #e6dcb8; tab-index: auto; nav: auto; }
+.itemrow:hover, .itemrow:focus, .setrow:hover, .setrow:focus { background-color: #f6efc8; }
+.itemrow .icon { vertical-align: middle; margin-right: 6dp; }
+.iname { display: inline-block; width: 300dp; }
+.icat { display: inline-block; width: 150dp; color: #6d6236; }
+.inum { display: inline-block; width: 80dp; text-align: right; }
+.isell { display: inline-block; width: 120dp; text-align: right; margin-right: 12dp; }
+.setrow .optile { float: left; margin-right: 10dp; }
+.setrow .celltext { display: inline-block; width: 640dp; }
+.setrow.dim { color: #9a9070; }
+.command.small { padding: 2dp 10dp; font-size: 13dp; }
+.goth { font-weight: bold; }
+.sort.active { background-color: #f3e27a; }
+
+/* Five tabs, the two stats and Close share the 1280dp bar: nothing in it
+   shrinks (a squeezed flex item overlapped its neighbour and took its clicks),
+   and the spacer takes what is left. */
+#topbar .brand, #topbar .tab, #topbar .stat, #topbar .close { flex-shrink: 0; }
+#topbar .tab { padding: 4dp 10dp; margin-right: 4dp; }
+#topbar .brand { margin-right: 12dp; }
+#topbar .spacer { flex: 1; flex-shrink: 1; }
+#topbar .stat { margin-left: 12dp; }
+
+/* Character commands, the Class List. */
+#charcmds { width: 100%; box-sizing: border-box; margin-top: 10dp; }
+.renamerow { display: block; margin: 6dp 0; }
+.namefield { display: inline-block; width: 260dp; height: 26dp; padding: 2dp 6dp; border: 2dp #b6a465; background-color: #fffaf0; color: #2b2414; font-size: 16dp; vertical-align: middle; margin-right: 8dp; }
+.namefield:focus { border-color: #3a4ba8; }
+.itemrow .portrait { width: 30dp; height: 36dp; vertical-align: middle; margin-right: 8dp; }
+.itemrow.dim { color: #9a9070; }
+
+/* Change Class requirement chart: the character's stat against the class's
+   minimum (func_ovlS_801D2378); a stat short of it is red. */
+.needs { display: block; margin-top: 6dp; }
+.need { display: block; height: 18dp; margin-bottom: 2dp; font-size: 13dp; }
+.needname { display: inline-block; width: 40dp; font-weight: bold; color: #3a3424; }
+.needbar { display: inline-block; position: relative; width: 220dp; height: 10dp; margin-right: 8dp; background-color: #cbbf98; border-radius: 3dp; }
+.needfill { position: absolute; left: 0; top: 0; height: 10dp; background-color: #3d7a3a; border-radius: 3dp; }
+.needmark { position: absolute; top: -3dp; width: 3dp; height: 16dp; background-color: #2b2414; }
+.need.short .needfill { background-color: #b0301c; }
+.need.short .needname, .need.short .needval { color: #b0301c; }
+.needval { display: inline-block; color: #3a3424; }
+
+
+/* The on-screen keyboard for Rename (organize_view.cpp build_keyboard). */
+.osk { display: block; margin: 4dp 0 8dp; }
+.oskkeys { display: block; }
+.key {
+    display: inline-block;
+    width: 34dp;
+    height: 28dp;
+    line-height: 28dp;
+    margin: 2dp;
+    text-align: center;
+    border: 1dp #b6a465;
+    border-radius: 4dp;
+    background-color: #fffaf0;
+    font-weight: bold;
+    tab-index: auto;
+    nav: auto;
+}
+.key.wide { width: 84dp; }
+.key.primary { background-color: #f3e27a; }
+.key:hover { border-color: #3a4ba8; }
+.key:focus { border-color: #ffffff; background-color: #e9d79a; }

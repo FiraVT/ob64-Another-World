@@ -1,0 +1,904 @@
+# Code the app inserts into the generated C, applied by tools/apply_hooks.py
+# after every regeneration (`make recomp`, `make bank-recomp`, `make rev0`).
+#
+# rom     the ROM address of the anchor's instruction: the game's own name for
+#         the code, the same in any N64Recomp-based build of revision 1. The
+#         tool finds which generated unit holds it (tools/n64map.py); a hook may
+#         still name `unit` (main or a bank letter) instead.
+# anchor  revision 1 text that occurs exactly once in the unit; `@@` marks where
+#         `code` goes. For revision 0 the tool moves every address in it
+#         (`0x8XXXXXXX`, `L_8XXXXXXX`) by the rule in docs/anotherworld/notes-revisions.md.
+# anchor_rev0  optional: the revision 0 anchor, where the rule cannot derive it
+#         (a changed function, or an address split into an instruction operand)
+# code    inserted text; its first line is the marker that makes applying idempotent
+# decls   C prototypes, written once before the function that holds the anchor
+
+[[hook]]
+name = "mission load event (802164E0)"
+rom = 0x196970
+anchor = '''
+@@    // 0x802164E0: lw          $t2, 0x34($sp)
+'''
+# Revision 0: the loader is one of the changed functions; the same `lw` follows
+# the same `jal 0x8007938C` (opening enemydat.bin) 0x20 later.
+anchor_rev0 = '''
+@@    // 0x80216500: lw          $t2, 0x34($sp)
+'''
+code = '''
+    // game event 1, mission load: templates, spawn list (app/features/game_events.hpp).
+    ogre_event(rdram, ctx, 1, (uint32_t)ctx->r2, (uint32_t)MEM_W(ctx->r29, 0X34));
+'''
+decls = ["void ogre_event(uint8_t* rdram, recomp_context* ctx, uint32_t event, uint32_t a0, uint32_t a1)"]
+
+[[hook]]
+name = "training mark"
+rom = 0x07C250
+anchor = '''
+@@    // 0x8019D2C0: sb          $v0, 0x3690($at)
+'''
+# Revision 0: the store's offset is the low half of 0x80193690, which moves too.
+anchor_rev0 = '''
+@@    // 0x8019D2A0: sb          $v0, 0x3670($at)
+'''
+code = '''
+    // war director: a training fight was bought (app/features/war_director.cpp).
+    ogre_training_mark(rdram);
+'''
+decls = ["void ogre_training_mark(uint8_t* rdram)"]
+
+[[hook]]
+name = "training build"
+rom = 0x23A78C
+anchor = '''
+@@    // 0x801D0C7C: addu        $s2, $zero, $zero
+'''
+code = '''
+    // war director: catch-up training template and level (app/features/war_director.cpp).
+    ctx->r20 = (int32_t)ogre_training_build(rdram, (uint32_t)ctx->r29 + 24, (uint32_t)ctx->r20);
+'''
+decls = ["uint32_t ogre_training_build(uint8_t* rdram, uint32_t templ, uint32_t level)"]
+
+[[hook]]
+name = "field speed (updates)"
+rom = 0x11B7F8
+anchor = '''
+@@    // 0x801C70B8: addiu       $s1, $v0, 0x1
+'''
+code = '''
+    // field speed (updates): Game speed setting -> n - 1 (app/features/field_speed.cpp).
+    ctx->r2 = (int32_t)ogre_field_speed(rdram, (uint32_t)ctx->r2);
+'''
+decls = ["uint32_t ogre_field_speed(uint8_t* rdram, uint32_t setting)"]
+
+[[hook]]
+name = "field speed (stop check)"
+rom = 0x11B840
+anchor = '''
+@@    // 0x801C7100: bne         $v0, $zero, L_801C70CC
+'''
+code = '''
+    // field speed: stop the extra updates when vanilla's pre-loop gate is set (app/features/field_speed.cpp).
+    if (ctx->r2 != 0 && ogre_field_hold(rdram)) ctx->r2 = 0;
+'''
+decls = ["int ogre_field_hold(uint8_t* rdram)"]
+
+[[hook]]
+name = "field update event (801B258C)"
+rom = 0x106CCC
+anchor = '''
+@@    // 0x801B258C: lw          $ra, 0x6C($sp)
+'''
+code = '''
+    // game event 2, field update (app/features/game_events.hpp).
+    ogre_event(rdram, ctx, 2, 0, 0);
+'''
+decls = ["void ogre_event(uint8_t* rdram, recomp_context* ctx, uint32_t event, uint32_t a0, uint32_t a1)"]
+
+[[hook]]
+name = "organize large picture (801BB440)"
+rom = 0x0A7EA0
+anchor = '''
+@@    // 0x801BB440: addiu       $v0, $zero, 0x3
+'''
+code = '''
+    // large units: the large picture for a large class (801BB440, app/features/class_rebalance.cpp).
+    ctx->r3 = (int32_t)ogre_display_kind(rdram, (uint32_t)ctx->r2, (uint32_t)ctx->r3);
+'''
+decls = ["uint32_t ogre_display_kind(uint8_t* rdram, uint32_t entry_base, uint32_t kind)"]
+
+[[hook]]
+name = "organize large picture (801BAEC4)"
+rom = 0x0A7924
+anchor = '''
+@@    // 0x801BAEC4: addiu       $v0, $zero, 0x3
+'''
+code = '''
+    // large units: the large picture for a large class (801BAEC4, app/features/class_rebalance.cpp).
+    ctx->r3 = (int32_t)ogre_display_kind(rdram, (uint32_t)ctx->r2, (uint32_t)ctx->r3);
+'''
+decls = ["uint32_t ogre_display_kind(uint8_t* rdram, uint32_t entry_base, uint32_t kind)"]
+
+[[hook]]
+name = "organize large picture (801BB1EC)"
+rom = 0x0A7C4C
+anchor = '''
+@@    // 0x801BB1EC: addiu       $v0, $zero, 0x3
+'''
+code = '''
+    // large units: the large picture for a large class (801BB1EC, app/features/class_rebalance.cpp).
+    ctx->r3 = (int32_t)ogre_display_kind(rdram, (uint32_t)ctx->r2, (uint32_t)ctx->r3);
+'''
+decls = ["uint32_t ogre_display_kind(uint8_t* rdram, uint32_t entry_base, uint32_t kind)"]
+
+[[hook]]
+name = "organize large picture (801BCC14)"
+rom = 0x0A9674
+anchor = '''
+@@    // 0x801BCC14: addiu       $v0, $zero, 0x3
+'''
+code = '''
+    // large units: the large picture for a large class (801BCC14, app/features/class_rebalance.cpp).
+    ctx->r3 = (int32_t)ogre_display_kind(rdram, (uint32_t)ctx->r2, (uint32_t)ctx->r3);
+'''
+decls = ["uint32_t ogre_display_kind(uint8_t* rdram, uint32_t entry_base, uint32_t kind)"]
+
+[[hook]]
+name = "organize large picture (801BD390)"
+rom = 0x0A9DF0
+anchor = '''
+@@    // 0x801BD390: addiu       $v0, $zero, 0x3
+'''
+code = '''
+    // large units: the large picture for a large class (801BD390, app/features/class_rebalance.cpp).
+    ctx->r3 = (int32_t)ogre_display_kind(rdram, (uint32_t)ctx->r4, (uint32_t)ctx->r3);
+'''
+decls = ["uint32_t ogre_display_kind(uint8_t* rdram, uint32_t entry_base, uint32_t kind)"]
+
+[[hook]]
+name = "class change minimum alignment (801D2584)"
+rom = 0x0BEFE4
+anchor = '''
+@@    // 0x801D2584: beq         $v1, $a0, L_801D25A4
+'''
+code = '''
+    // no alignment requirement: minimum (801D2584, app/features/class_rebalance.cpp).
+    ctx->r3 = (int32_t)ogre_alignment_requirement((uint32_t)ctx->r3);
+'''
+decls = ["uint32_t ogre_alignment_requirement(uint32_t requirement)"]
+
+[[hook]]
+name = "class change maximum alignment (801D25B0)"
+rom = 0x0BF010
+anchor = '''
+@@    // 0x801D25B0: beq         $v1, $a0, L_801D25D0
+'''
+code = '''
+    // no alignment requirement: maximum (801D25B0, app/features/class_rebalance.cpp).
+    ctx->r3 = (int32_t)ogre_alignment_requirement((uint32_t)ctx->r3);
+'''
+decls = ["uint32_t ogre_alignment_requirement(uint32_t requirement)"]
+
+[[hook]]
+name = "class qualify minimum alignment (801D7210)"
+rom = 0x0C3C70
+anchor = '''
+@@    // 0x801D7210: beq         $v1, $a0, L_801D7230
+'''
+code = '''
+    // no alignment requirement: minimum (801D7210, app/features/class_rebalance.cpp).
+    ctx->r3 = (int32_t)ogre_alignment_requirement((uint32_t)ctx->r3);
+'''
+decls = ["uint32_t ogre_alignment_requirement(uint32_t requirement)"]
+
+[[hook]]
+name = "class qualify maximum alignment (801D723C)"
+rom = 0x0C3C9C
+anchor = '''
+@@    // 0x801D723C: beq         $v1, $a0, L_801D725C
+'''
+code = '''
+    // no alignment requirement: maximum (801D723C, app/features/class_rebalance.cpp).
+    ctx->r3 = (int32_t)ogre_alignment_requirement((uint32_t)ctx->r3);
+'''
+decls = ["uint32_t ogre_alignment_requirement(uint32_t requirement)"]
+
+[[hook]]
+name = "pause at frame boundary (8008B024)"
+rom = 0x01B424
+anchor = '''
+@@    // 0x8008B024: lui         $a0, 0x800C
+'''
+code = '''
+    // Esc menu pause: hold here between frames (8008B024, app/src/overlay.cpp).
+    ogre_frame_gate();
+'''
+decls = ["void ogre_frame_gate(void)"]
+
+[[hook]]
+name = "organize edits on the frame pump (8008B024)"
+rom = 0x01B424
+anchor = '''
+@@    // 0x8008B024: lui         $a0, 0x800C
+'''
+code = '''
+    // F3 Organize: run queued edits through the game's routines (8008B024, app/features/organize_edit.cpp).
+    ogre_organize_frame(rdram, ctx);
+'''
+decls = ["void ogre_organize_frame(uint8_t* rdram, recomp_context* ctx)"]
+
+[[hook]]
+name = "large units one square (8016DE88)"
+rom = 0x043D88
+anchor = '''
+@@    // 0x8016DE88: jr          $ra
+'''
+code = '''
+    // LARGE UNITS ONE SQUARE: size 1 for the Organize rules (8016DE88, app/features/class_rebalance.cpp).
+    ctx->r2 = (int32_t)ogre_class_size(rdram, (uint32_t)ctx->r2, (uint32_t)ctx->r31);
+'''
+decls = ["uint32_t ogre_class_size(uint8_t* rdram, uint32_t size, uint32_t return_address)"]
+
+[[hook]]
+name = "dialogue auto-play (8017F578)"
+rom = 0x055478
+# The entry of the message-window input handler func_8017F574, after the frame
+# is set up; $a0 is the focused window (func_8017F4B0 picks it every frame).
+anchor = '''
+@@    // 0x8017F578: addu        $a2, $a0, $zero
+'''
+code = '''
+    // AUTO-PLAY DIALOGUE: watch the focused message window (8017F578, app/features/dialogue_autoplay.cpp).
+    ogre_dialogue_autoplay_tick(rdram, (uint32_t)ctx->r4);
+'''
+decls = ["void ogre_dialogue_autoplay_tick(uint8_t* rdram, uint32_t window)"]
+
+[[hook]]
+name = "skip intro (80177DFC)"
+rom = 0x04DCFC
+anchor = '''
+@@    // 0x80177DFC: lw          $ra, 0x10($sp)
+'''
+code = '''
+    // SKIP INTRO: go to the title instead (80177DFC, app/src/bank_overlays.cpp).
+    ogre_skip_intro(rdram);
+'''
+decls = ["void ogre_skip_intro(uint8_t* rdram)"]
+
+[[hook]]
+name = "skip intro title press (8019BD0C)"
+rom = 0x1D21BC
+anchor = '''
+@@    // 0x8019BD0C: lui         $v0, 0x801C
+'''
+code = '''
+    // SKIP INTRO: open the title menu (8019BD0C, app/src/bank_overlays.cpp).
+    ogre_skip_title_press(rdram);
+'''
+decls = ["void ogre_skip_title_press(uint8_t* rdram)"]
+
+[[hook]]
+name = "mission cursor (801BECC8)"
+rom = 0x113408
+anchor = '''
+L_801BECC8:
+@@    // 0x801BECC8: lw          $ra, 0x3C($sp)
+'''
+code = '''
+    // mission cursor: place the cursor at the pointer (app/src/mission_cursor.cpp).
+    // The hook reads `*(u32*)0x801AB870`, the mission field's state object.
+    ogre_mission_cursor(rdram);
+'''
+decls = ["void ogre_mission_cursor(uint8_t* rdram)"]
+
+[[hook]]
+name = "mission cursor note (801BEC04)"
+rom = 0x113344
+anchor = '''
+L_801BEC04:
+@@    // 0x801BEC04: lui         $v1, 0x801B
+'''
+code = '''
+    // mission cursor: record whether the mover moved the cursor itself.
+    ogre_mission_cursor_note_move(rdram);
+'''
+decls = ["void ogre_mission_cursor_note_move(uint8_t* rdram)"]
+
+[[hook]]
+name = "map cursor (801A1C48)"
+rom = 0x080BD8
+anchor = '''
+@@    // 0x801A1C48: lh          $a0, 0x52($v1)
+    ctx->r4 = MEM_H(ctx->r3, 0X52);
+'''
+code = '''
+    // map cursor: place the sprite at the pointer (app/src/map_cursor.cpp).
+    // `ctx->r3` is `*(u32*)0x80197B18` at this point in the function.
+    ogre_map_cursor(rdram, (int32_t)ctx->r3);
+'''
+decls = ["void ogre_map_cursor(uint8_t* rdram, int32_t state)"]
+
+[[hook]]
+name = "battle AI attack pick (801C89E4)"
+rom = 0x20BE24
+anchor = '''
+    after_2:
+@@    // 0x801C89E4: andi        $a0, $v0, 0xFF
+'''
+code = '''
+    // battle AI: choose the actor's attack (app/features/battle_ai.cpp).
+    ctx->r2 = (int32_t)ogre_battle_pick_attack(rdram, (uint32_t)ctx->r16, (uint32_t)ctx->r2);
+'''
+decls = ["uint32_t ogre_battle_pick_attack(uint8_t* rdram, uint32_t actor, uint32_t attack)"]
+
+[[hook]]
+name = "centurion command, round reset (801AFFA4)"
+rom = 0x1F33E4
+anchor = '''
+@@    // 0x801AFFA4: sw          $v0, 0x70($s3)
+'''
+code = '''
+    // centurion command (801AFFA4): Soldier attacks + 1 per Centurion on its side (app/features/battle_ai.cpp).
+    ctx->r2 = (int32_t)ogre_battle_attack_count(rdram, (uint32_t)ctx->r19, (uint32_t)ctx->r2);
+'''
+decls = ["uint32_t ogre_battle_attack_count(uint8_t* rdram, uint32_t actor, uint32_t count)"]
+
+[[hook]]
+name = "centurion command, row change (801C9808)"
+rom = 0x20CC48
+anchor = '''
+@@    // 0x801C9808: sw          $v0, 0x70($s5)
+'''
+code = '''
+    // centurion command (801C9808): Soldier attacks + 1 per Centurion on its side (app/features/battle_ai.cpp).
+    ctx->r2 = (int32_t)ogre_battle_attack_count(rdram, (uint32_t)ctx->r21, (uint32_t)ctx->r2);
+'''
+decls = ["uint32_t ogre_battle_attack_count(uint8_t* rdram, uint32_t actor, uint32_t count)"]
+
+[[hook]]
+name = "centurion command, Princess pass 1 (801C9758)"
+rom = 0x20CB98
+anchor = '''
+@@    // 0x801C9758: sw          $v0, 0x70($s0)
+'''
+code = '''
+    // centurion command (801C9758): Soldier attacks + 1 per Centurion on its side (app/features/battle_ai.cpp).
+    ctx->r2 = (int32_t)ogre_battle_attack_count(rdram, (uint32_t)ctx->r16, (uint32_t)ctx->r2);
+'''
+decls = ["uint32_t ogre_battle_attack_count(uint8_t* rdram, uint32_t actor, uint32_t count)"]
+
+[[hook]]
+name = "centurion command, Princess pass 2 (801CAB90)"
+rom = 0x20DFD0
+anchor = '''
+@@    // 0x801CAB90: sw          $v0, 0x70($s1)
+'''
+code = '''
+    // centurion command (801CAB90): Soldier attacks + 1 per Centurion on its side (app/features/battle_ai.cpp).
+    ctx->r2 = (int32_t)ogre_battle_attack_count(rdram, (uint32_t)ctx->r17, (uint32_t)ctx->r2);
+'''
+decls = ["uint32_t ogre_battle_attack_count(uint8_t* rdram, uint32_t actor, uint32_t count)"]
+
+[[hook]]
+name = "centurion command, Princess pass 3 (801CAFB8)"
+rom = 0x20E3F8
+anchor = '''
+@@    // 0x801CAFB8: sw          $v0, 0x70($s1)
+'''
+code = '''
+    // centurion command (801CAFB8): Soldier attacks + 1 per Centurion on its side (app/features/battle_ai.cpp).
+    ctx->r2 = (int32_t)ogre_battle_attack_count(rdram, (uint32_t)ctx->r17, (uint32_t)ctx->r2);
+'''
+decls = ["uint32_t ogre_battle_attack_count(uint8_t* rdram, uint32_t actor, uint32_t count)"]
+
+[[hook]]
+name = "centurion command, Princess pass 4 (801CB4A0)"
+rom = 0x20E8E0
+anchor = '''
+@@    // 0x801CB4A0: sw          $v0, 0x70($s1)
+'''
+code = '''
+    // centurion command (801CB4A0): Soldier attacks + 1 per Centurion on its side (app/features/battle_ai.cpp).
+    ctx->r2 = (int32_t)ogre_battle_attack_count(rdram, (uint32_t)ctx->r17, (uint32_t)ctx->r2);
+'''
+decls = ["uint32_t ogre_battle_attack_count(uint8_t* rdram, uint32_t actor, uint32_t count)"]
+
+[[hook]]
+name = "centurion command, Princess pass 5 (801CB82C)"
+rom = 0x20EC6C
+anchor = '''
+@@    // 0x801CB82C: sw          $v0, 0x70($s1)
+'''
+code = '''
+    // centurion command (801CB82C): Soldier attacks + 1 per Centurion on its side (app/features/battle_ai.cpp).
+    ctx->r2 = (int32_t)ogre_battle_attack_count(rdram, (uint32_t)ctx->r17, (uint32_t)ctx->r2);
+'''
+decls = ["uint32_t ogre_battle_attack_count(uint8_t* rdram, uint32_t actor, uint32_t count)"]
+
+[[hook]]
+name = "hd backgrounds (80199954)"
+rom = 0x068BF0
+anchor = '''
+    // 0x80199950: sb          $v0, 0x7E($v1)
+    MEM_B(0X7E, ctx->r3) = ctx->r2;
+@@L_80199954:
+'''
+code = '''
+    // hd backgrounds: the pass's pixels are in their buffer now.
+    // Let the image pack replace them (app/src/hd_backgrounds.cpp). A no-op
+    // when no pack is installed.
+    ogre_hd_background(rdram);
+'''
+decls = ["void ogre_hd_background(uint8_t* rdram)"]
+
+[[hook]]
+name = "njpeg readback sync (80199878)"
+rom = 0x068B18
+anchor = '''
+@@    // 0x80199878: lw          $s0, 0x64($a0)
+    ctx->r16 = MEM_W(ctx->r4, 0X64);
+'''
+code = '''
+    // njpeg readback: make the RDP's rendered pixels visible in RDRAM first.
+    ogre_sync_framebuffers();
+'''
+decls = ["void ogre_sync_framebuffers(void)"]
+
+[[hook]]
+name = "njpeg readback source (80199878)"
+rom = 0x068B18
+anchor = '''
+    // 0x80199878: lw          $s0, 0x64($a0)
+    ctx->r16 = MEM_W(ctx->r4, 0X64);
+@@'''
+code = '''
+    { // njpeg readback source: trust the game's own framebuffer choice.
+      // `state[0x64]`, loaded just above, is table[D_800C4BB8 index] over the
+      // game's framebuffer table at 0x800A8204. The index defaults to 0 when
+      // D_800C4BB8 matches no entry, and entry 0 can then name a buffer the YUV
+      // draw did not land in -- the case the renderer's njpeg target (scratch +8,
+      // then the most recent game framebuffer at +12) is for. See
+      // tools/njpeg_readback.py.
+        {
+            const uint8_t* t = (const uint8_t*)(rdram + 0x0A8204);
+            const uint8_t* dw = (const uint8_t*)(rdram + 0x0C4BB8);
+            const uint32_t fb0 = (uint32_t)t[0] | ((uint32_t)t[1] << 8) | ((uint32_t)t[2] << 16) | ((uint32_t)t[3] << 24);
+            const uint32_t fb1 = (uint32_t)t[4] | ((uint32_t)t[5] << 8) | ((uint32_t)t[6] << 16) | ((uint32_t)t[7] << 24);
+            const uint32_t fb2 = (uint32_t)t[8] | ((uint32_t)t[9] << 8) | ((uint32_t)t[10] << 16) | ((uint32_t)t[11] << 24);
+            const uint32_t dispWord = (uint32_t)dw[0] | ((uint32_t)dw[1] << 8) | ((uint32_t)dw[2] << 16) | ((uint32_t)dw[3] << 24);
+            const int displayKnown = (dispWord == fb0) || (dispWord == fb1) || (dispWord == fb2);
+            if (!displayKnown) {
+                const uint8_t* s = (const uint8_t*)(rdram + 0x7FFC00);
+                uint32_t njpegTarget = (uint32_t)s[8] | ((uint32_t)s[9] << 8) | ((uint32_t)s[10] << 16) | ((uint32_t)s[11] << 24);
+                if (njpegTarget == 0) {
+                    njpegTarget = (uint32_t)s[12] | ((uint32_t)s[13] << 8) | ((uint32_t)s[14] << 16) | ((uint32_t)s[15] << 24);
+                }
+                if (njpegTarget != 0) {
+                    ctx->r16 = njpegTarget;
+                }
+            }
+        }
+    }
+'''
+decls = []
+
+[[hook]]
+name = "item granted event (801DC740)"
+rom = 0x130E80
+anchor = '''
+@@    // 0x801DC740: addiu       $sp, $sp, -0x18
+    ctx->r29 = ADD32(ctx->r29, -0X18);
+    // 0x801DC744: andi        $t0, $a0, 0x7FFF
+'''
+code = '''
+    // game event 3, item granted: item word, $a1; a subscriber may rewrite $a0 (app/features/game_events.hpp).
+    ogre_event(rdram, ctx, 3, (uint32_t)ctx->r4, (uint32_t)ctx->r5);
+'''
+decls = ["void ogre_event(uint8_t* rdram, recomp_context* ctx, uint32_t event, uint32_t a0, uint32_t a1)"]
+
+[[hook]]
+name = "field frame event (801BEF60)"
+rom = 0x1136A0
+anchor = '''
+L_801BEF60:
+@@    // 0x801BEF60: lw          $ra, 0x28($sp)
+'''
+code = '''
+    // game event 4, field frame after the camera pan (app/features/game_events.hpp).
+    ogre_event(rdram, ctx, 4, 0, 0);
+'''
+decls = ["void ogre_event(uint8_t* rdram, recomp_context* ctx, uint32_t event, uint32_t a0, uint32_t a1)"]
+
+[[hook]]
+name = "boss escorts: battle setup (801D1A80)"
+rom = 0x214D00
+anchor = """
+    int c1cs = 0;
+@@    // 0x801D1A80: addiu       $sp, $sp, -0x58
+"""
+code = """
+    // boss escorts: is the enemy side the boss with extra members (app/features/boss_escorts.cpp).
+    ogre_battle_setup(rdram);
+"""
+decls = ["void ogre_battle_setup(uint8_t* rdram)"]
+
+[[hook]]
+name = "boss escorts: member reference (801D1CC0)"
+rom = 0x214F40
+anchor = """
+    // 0x801D1CC0: lbu         $v1, 0x2($s1)
+    ctx->r3 = MEM_BU(ctx->r17, 0X2);
+@@    // 0x801D1CC4: beql        $v1, $zero, L_801D1E48
+"""
+code = """
+    // boss escorts: members 6-7 of the boss unit, 801D1CC0 (app/features/boss_escorts.cpp).
+    ctx->r3 = (int32_t)ogre_battle_member(rdram, (uint32_t)ctx->r23, (uint32_t)ctx->r3);
+"""
+decls = ["uint32_t ogre_battle_member(uint8_t* rdram, uint32_t index, uint32_t loaded)"]
+
+[[hook]]
+name = "boss escorts: member square (801D1D10)"
+rom = 0x214F8C
+anchor = """
+    // 0x801D1D0C: jal         0x801CA5C0
+    // 0x801D1D10: lbu         $a0, 0x84F($v0)
+    ctx->r4 = MEM_BU(ctx->r2, 0X84F);
+@@    LOOKUP_FUNC(0x801CA5C0)(rdram, ctx);
+"""
+code = """
+    // boss escorts: the extra members' squares (app/features/boss_escorts.cpp).
+    ctx->r4 = (int32_t)ogre_battle_square(rdram, (uint32_t)ctx->r23, (uint32_t)ctx->r4);
+"""
+decls = ["uint32_t ogre_battle_square(uint8_t* rdram, uint32_t index, uint32_t loaded)"]
+
+[[hook]]
+name = "boss escorts: member reference (801D1D7C)"
+rom = 0x214FFC
+anchor = """
+    // 0x801D1D7C: lbu         $s4, 0x2($s6)
+    ctx->r20 = MEM_BU(ctx->r22, 0X2);
+@@    // 0x801D1D80: addu        $s1, $zero, $zero
+"""
+code = """
+    // boss escorts: members 6-7 of the boss unit, 801D1D7C (app/features/boss_escorts.cpp).
+    ctx->r20 = (int32_t)ogre_battle_member(rdram, (uint32_t)ctx->r23, (uint32_t)ctx->r20);
+"""
+decls = ["uint32_t ogre_battle_member(uint8_t* rdram, uint32_t index, uint32_t loaded)"]
+
+[[hook]]
+name = "boss escorts: member reference (801D1DD0)"
+rom = 0x215050
+anchor = """
+    // 0x801D1DD0: lbu         $a1, 0x2($s6)
+    ctx->r5 = MEM_BU(ctx->r22, 0X2);
+@@    // 0x801D1DD4: jal         0x801C9498
+"""
+code = """
+    // boss escorts: members 6-7 of the boss unit, 801D1DD0 (app/features/boss_escorts.cpp).
+    ctx->r5 = (int32_t)ogre_battle_member(rdram, (uint32_t)ctx->r23, (uint32_t)ctx->r5);
+"""
+decls = ["uint32_t ogre_battle_member(uint8_t* rdram, uint32_t index, uint32_t loaded)"]
+
+[[hook]]
+name = "boss escorts: member bound (801D1E48)"
+rom = 0x2150C8
+anchor = """
+    // 0x801D1E48: slti        $v0, $s7, 0x5
+    ctx->r2 = SIGNED(ctx->r23) < 0X5 ? 1 : 0;
+@@    // 0x801D1E4C: bne         $v0, $zero, L_801D1C98
+"""
+code = """
+    // boss escorts: up to seven members on the boss side (app/features/boss_escorts.cpp).
+    ctx->r2 = (int32_t)ogre_battle_more(rdram, (uint32_t)ctx->r23, (uint32_t)ctx->r2);
+"""
+decls = ["uint32_t ogre_battle_more(uint8_t* rdram, uint32_t index, uint32_t result)"]
+
+[[hook]]
+name = "boss escorts: grid square, side 0 (801C63A4)"
+rom = 0x2097E4
+anchor = """
+    // 0x801C63A4: lbu         $v1, 0x7($s2)
+    ctx->r3 = MEM_BU(ctx->r18, 0X7);
+@@    // 0x801C63A8: j           L_801C63B4
+"""
+code = """
+    // boss escorts: the extras in the occupancy grid, 801C63A4 (app/features/boss_escorts.cpp).
+    ctx->r3 = (int32_t)ogre_unit_square(rdram, (uint32_t)MEM_W(0X10, ctx->r19), (uint32_t)ctx->r17, (uint32_t)ctx->r3);
+"""
+decls = ["uint32_t ogre_unit_square(uint8_t* rdram, uint32_t unit, uint32_t index, uint32_t loaded)"]
+
+[[hook]]
+name = "boss escorts: grid square, side 1 (801C63B0)"
+rom = 0x2097F0
+anchor = """
+    // 0x801C63B0: lbu         $s0, 0x7($s2)
+    ctx->r16 = MEM_BU(ctx->r18, 0X7);
+@@L_801C63B4:
+"""
+code = """
+    // boss escorts: the extras in the occupancy grid, 801C63B0 (app/features/boss_escorts.cpp).
+    ctx->r16 = (int32_t)ogre_unit_square(rdram, (uint32_t)MEM_W(0X10, ctx->r19), (uint32_t)ctx->r17, (uint32_t)ctx->r16);
+"""
+decls = ["uint32_t ogre_unit_square(uint8_t* rdram, uint32_t unit, uint32_t index, uint32_t loaded)"]
+
+[[hook]]
+name = "boss escorts: grid member (801C63B4)"
+rom = 0x2097F4
+anchor = """
+    // 0x801C63B4: lbu         $a2, 0x2($s2)
+    ctx->r6 = MEM_BU(ctx->r18, 0X2);
+@@    // 0x801C63B8: andi        $v1, $a2, 0xFF
+"""
+code = """
+    // boss escorts: the extras in the occupancy grid, 801C63B4 (app/features/boss_escorts.cpp).
+    ctx->r6 = (int32_t)ogre_unit_member(rdram, (uint32_t)MEM_W(0X10, ctx->r19), (uint32_t)ctx->r17, (uint32_t)ctx->r6);
+"""
+decls = ["uint32_t ogre_unit_member(uint8_t* rdram, uint32_t unit, uint32_t index, uint32_t loaded)"]
+
+[[hook]]
+name = "boss escorts: grid bound (801C65CC)"
+rom = 0x209A0C
+anchor = """
+    // 0x801C65CC: slti        $v0, $s1, 0x5
+    ctx->r2 = SIGNED(ctx->r17) < 0X5 ? 1 : 0;
+@@    // 0x801C65D0: bne         $v0, $zero, L_801C639C
+"""
+code = """
+    // boss escorts: the extras in the occupancy grid, 801C65CC (app/features/boss_escorts.cpp).
+    ctx->r2 = (int32_t)ogre_unit_more(rdram, (uint32_t)MEM_W(0X10, ctx->r19), (uint32_t)ctx->r17, (uint32_t)ctx->r2);
+"""
+decls = ["uint32_t ogre_unit_more(uint8_t* rdram, uint32_t unit, uint32_t index, uint32_t result)"]
+
+[[hook]]
+name = "field limit (free slots 801B8B64)"
+rom = 0x10D2A4
+anchor = '''
+@@    // 0x801B8B64: addu        $v1, $v0, $zero
+'''
+code = '''
+    // FIELD LIMIT: units out at once, 10 -> ogre_field_limit (app/features/field_select.cpp).
+    ctx->r2 = (int32_t)ogre_field_limit();
+'''
+decls = ["int ogre_field_limit(void)"]
+
+[[hook]]
+name = "field limit (dispatch menu 801B8C3C)"
+rom = 0x10D37C
+anchor = '''
+@@    // 0x801B8C3C: slt         $v0, $s0, $v1
+'''
+code = '''
+    // FIELD LIMIT (Dispatch menu): units out at once, 10 -> ogre_field_limit (app/features/field_select.cpp).
+    ctx->r3 = (int32_t)ogre_field_limit();
+'''
+decls = ["int ogre_field_limit(void)"]
+
+[[hook]]
+name = "field limit (legion split 801CBA8C)"
+rom = 0x1201CC
+anchor = '''
+@@    // 0x801CBA8C: subu        $a0, $a0, $s2
+'''
+code = '''
+    // FIELD LIMIT (legion split): units out at once, 10 -> ogre_field_limit (app/features/field_select.cpp).
+    ctx->r4 = (int32_t)ogre_field_limit();
+'''
+decls = ["int ogre_field_limit(void)"]
+
+
+[[hook]]
+name = "class animation resource size (8009DAF4)"
+rom = 0x02DEF4
+# The entry of func_8009DAF4 (an asset's size), before its frame is set up.
+# For the class animation resource (asset 0x00315736) with new classes, the
+# size of the extended copy (docs/anotherworld/design-new-classes.md section 7).
+anchor = '''
+@@    // 0x8009DAF4: addiu       $sp, $sp, -0x40
+'''
+code = '''
+    // NEW CLASS ART: an asset a pack's art replaces loads from its copy (8009DAF4, app/features/class_art.cpp).
+    ctx->r4 = (int32_t)ogre_asset_redirect((uint32_t)ctx->r4);
+    // NEW CLASSES: the extended class animation resource's size (8009DAF4, app/features/class_animation.cpp).
+    { const uint32_t extended = ogre_class_animation_size((uint32_t)ctx->r4); if (extended != 0) { ctx->r2 = extended; recomp_trace_return(rdram, 0); return; } }
+'''
+decls = ["uint32_t ogre_class_animation_size(uint32_t asset)", "uint32_t ogre_asset_redirect(uint32_t asset)"]
+
+[[hook]]
+name = "class animation resource load (8009DBB8)"
+rom = 0x02DFB8
+# The entry of func_8009DBB8 (load an asset into $a0, allocating when $a0 is
+# 0), before its frame is set up. For the class animation resource with new
+# classes, the extended copy goes into $a0, which the function returns.
+anchor = '''
+@@    // 0x8009DBB8: addiu       $sp, $sp, -0x50
+'''
+code = '''
+    // NEW CLASS ART: an asset a pack's art replaces loads from its copy (8009DBB8, app/features/class_art.cpp).
+    ctx->r5 = (int32_t)ogre_asset_redirect((uint32_t)ctx->r5);
+    // NEW CLASSES: load the extended class animation resource (8009DBB8, app/features/class_animation.cpp).
+    if (ogre_class_animation_load(rdram, (uint32_t)ctx->r4, (uint32_t)ctx->r5) != 0) { ctx->r2 = ctx->r4; recomp_trace_return(rdram, 0); return; }
+'''
+decls = ["uint32_t ogre_class_animation_load(uint8_t* rdram, uint32_t dst, uint32_t asset)", "uint32_t ogre_asset_redirect(uint32_t asset)"]
+
+[[hook]]
+name = "decompressor pointer check (8007A110)"
+rom = 0x00A510
+# The entry of func_8007A110 (the LZ decompressor: $a0 destination, $a1
+# source), before its frame is set up. Logs one line when either pointer is
+# outside RDRAM, with the caller's return address, so a crash in it names the
+# code that passed the pointer. It changes nothing (app/features/class_animation.cpp).
+anchor = '''
+@@    // 0x8007A110: addiu       $sp, $sp, -0x28
+'''
+code = '''
+    // DIAGNOSTIC: report a bad decompressor pointer (8007A110, app/features/class_animation.cpp).
+    ogre_lz_check((uint32_t)ctx->r4, (uint32_t)ctx->r5, (uint32_t)ctx->r31, (uint32_t)ctx->r29);
+'''
+decls = ["void ogre_lz_check(uint32_t dst, uint32_t src, uint32_t ra, uint32_t sp)"]
+
+[[hook]]
+name = "class line for new classes (801CF310)"
+rom = 0x0BBD98
+# The return of func_ovlS_801CF310: the class's line, the low nibble of the
+# family table's high byte (0x801EF2EC), 0 for a class of 81 or more. A new
+# class that a pack offers in Change Class gets its family_of class's line
+# (app/features/class_change.cpp).
+anchor = '''
+@@    // 0x801CF338: jr          $ra
+'''
+code = '''
+    // NEW CLASSES: the line of a new class in Change Class (801CF310, app/features/class_change.cpp).
+    ctx->r2 = (int32_t)ogre_class_family((uint32_t)ctx->r4, 1, (uint32_t)ctx->r2);
+'''
+decls = ["uint32_t ogre_class_family(uint32_t cls, uint32_t high, uint32_t value)"]
+
+[[hook]]
+name = "class mask for new classes (801CF340)"
+rom = 0x0BBDC4
+# The return of func_ovlS_801CF340: the class's property mask, the family
+# table's low byte, 0 for a class of 81 or more (app/features/class_change.cpp).
+anchor = '''
+@@    // 0x801CF364: jr          $ra
+'''
+code = '''
+    // NEW CLASSES: the property mask of a new class in Change Class (801CF340, app/features/class_change.cpp).
+    ctx->r2 = (int32_t)ogre_class_family((uint32_t)ctx->r4, 0, (uint32_t)ctx->r2);
+'''
+decls = ["uint32_t ogre_class_family(uint32_t cls, uint32_t high, uint32_t value)"]
+
+[[hook]]
+name = "requirements asset size (8009DD38)"
+rom = 0x02E204
+# In func_8009DD38 (load and decode an LZ asset; $s2 the asset id), after
+# func_8007A7E0 gives the decoded size in $v0 and before it is allocated. The
+# Change Class requirements (asset 0x01E398D2) get room for 256 records when a
+# pack offers a new class there (app/features/class_change.cpp).
+anchor = '''
+@@    // 0x8009DE04: jal         0x80070F30
+'''
+code = '''
+    // NEW CLASSES: room for new classes' Change Class requirements (8009DD38, app/features/class_change.cpp).
+    ctx->r2 = (int32_t)ogre_requirements_size((uint32_t)ctx->r18, (uint32_t)ctx->r2);
+'''
+decls = ["uint32_t ogre_requirements_size(uint32_t asset, uint32_t size)"]
+
+[[hook]]
+name = "requirements asset fill (8009DD38)"
+rom = 0x02E21C
+# In func_8009DD38, after the decode into $s1: writes the new classes'
+# requirement records past the asset's 81 (app/features/class_change.cpp).
+anchor = '''
+@@    // 0x8009DE1C: jal         0x800712C4
+'''
+code = '''
+    // NEW CLASSES: the new classes' Change Class requirements (8009DD38, app/features/class_change.cpp).
+    ogre_requirements_fill(rdram, (uint32_t)ctx->r18, (uint32_t)ctx->r17);
+'''
+decls = ["void ogre_requirements_fill(uint8_t* rdram, uint32_t asset, uint32_t dst)"]
+
+[[hook]]
+name = "class list: class line table copy (801D2808)"
+rom = 0x0BF268
+# The entry of func_ovlS_801D2808, the classic Change Class list. Its two reads
+# of the class line table use a 256-entry copy in the content arena when a
+# pack offers a new class (tools/relocate_tables.py); this writes the copy
+# first (app/features/class_change.cpp).
+anchor = '''
+@@    // 0x801D2808: lui         $v0, 0x8019
+'''
+code = '''
+    // NEW CLASSES: the class line table copy for the classic Change Class list (801D2808, app/features/class_change.cpp).
+    ogre_family_table_prepare(rdram);
+'''
+decls = ["void ogre_family_table_prepare(uint8_t* rdram)"]
+
+[[hook]]
+name = "class list: seen-class bits past class 167 (801D294C)"
+rom = 0x0BF3B0
+# In func_ovlS_801D2808, after the load of the seen-classes byte for class $s0
+# (0x80196A96 + class / 8, address in $at). The 21-byte bitfield ends at class
+# 167; the byte for a later class is the port's: a new class offered in
+# Change Class is seen (app/features/class_change.cpp).
+anchor = '''
+@@    // 0x801D2950: lui         $at, 0x801F
+'''
+code = '''
+    // NEW CLASSES: seen-class bits for classes past 167 (801D294C, app/features/class_change.cpp).
+    ctx->r3 = (int32_t)ogre_known_classes_byte((uint32_t)ctx->r1, (uint32_t)ctx->r3);
+'''
+decls = ["uint32_t ogre_known_classes_byte(uint32_t base, uint32_t loaded)"]
+
+[[hook]]
+name = "class list: draw record flag (801B8384)"
+rom = 0x0A4DE8
+# In the classic Organize screen's draw (func_ovlS_801B7FC0), after a class
+# list entry's low byte goes to the draw record at $s0 (state +0x32C). The
+# entry keeps the "not selectable" flag in 0x8000 (tools/relocate_tables.py);
+# the record carries it in byte +1, which the class line's draw reads.
+anchor = '''
+@@    // 0x801B8388: lui         $v0, 0x8019
+'''
+code = '''
+    // NEW CLASSES: the class list entry's flag in the draw record (801B8384, tools/relocate_tables.py).
+    MEM_B(0X1, ctx->r16) = (int8_t)((ctx->r2 >> 15) & 1);
+'''
+decls = []
+
+[[hook]]
+name = "class list: draw record flag (801B8440)"
+rom = 0x0A4EA4
+# As above, for the screen's second list loop.
+anchor = '''
+@@    // 0x801B8444: lui         $v0, 0x8019
+'''
+code = '''
+    // NEW CLASSES: the class list entry's flag in the draw record (801B8440, tools/relocate_tables.py).
+    MEM_B(0X1, ctx->r16) = (int8_t)((ctx->r2 >> 15) & 1);
+'''
+decls = []
+
+[[hook]]
+name = "class change check log (801D2378)"
+rom = 0x0BF218
+# DIAGNOSTIC. The exit of func_ovlS_801D2378 (Change Class check: $fp the
+# character, [sp+0x17] the target class, $v0 the result, the reason at
+# Organize state +0x5ED). Logs the result for a character of a class past 80
+# when it changes (app/features/class_change.cpp).
+anchor = '''
+@@    // 0x801D27B8: lw          $ra, 0x3C($sp)
+'''
+code = '''
+    // DIAGNOSTIC: the Change Class check for a new class (801D2378, app/features/class_change.cpp).
+    ogre_class_check_log(rdram, (uint32_t)ctx->r30, (uint32_t)MEM_BU(ctx->r29, 0X17), (uint32_t)ctx->r2);
+'''
+decls = ["void ogre_class_check_log(uint8_t* rdram, uint32_t character, uint32_t target, uint32_t result)"]
+
+[[hook]]
+name = "organize option log (801D379C)"
+rom = 0x0C0A28
+# DIAGNOSTIC. The exit of func_ovlS_801D379C (an Organize option's check: $s1
+# the character, $s6 the option, $v0 -1 allowed or the refusal code). Logs it
+# for a character of a class past 80 when it changes.
+anchor = '''
+@@    // 0x801D3FC8: lw          $ra, 0x2C($sp)
+'''
+code = '''
+    // DIAGNOSTIC: an Organize option for a new class (801D379C, app/features/class_change.cpp).
+    ogre_class_option_log(rdram, (uint32_t)ctx->r17, (uint32_t)ctx->r22, (uint32_t)ctx->r2);
+'''
+decls = ["void ogre_class_option_log(uint8_t* rdram, uint32_t character, uint32_t option, uint32_t result)"]
+
+[[hook]]
+name = "asset redirect (8009DD38)"
+rom = 0x02E138
+# The entry of func_8009DD38 (load and decode an LZ asset; $a0 the id), before
+# its frame is set up. An asset a pack's art replaces (a formation atlas with
+# a new class's figure appended) loads from its copy in the ROM image's free
+# end (app/features/class_art.cpp; docs/anotherworld/design-class-art.md).
+anchor = '''
+@@    // 0x8009DD38: addiu       $sp, $sp, -0x40
+'''
+code = '''
+    // NEW CLASS ART: an asset a pack's art replaces loads from its copy (8009DD38, app/features/class_art.cpp).
+    ctx->r4 = (int32_t)ogre_asset_redirect((uint32_t)ctx->r4);
+'''
+decls = ["uint32_t ogre_asset_redirect(uint32_t asset)"]

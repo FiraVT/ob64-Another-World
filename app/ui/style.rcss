@@ -1,0 +1,68 @@
+/* Base style for the port's RmlUi screens. Colours follow the reference
+   layouts in docs/anotherworld/design-organize-screen.md: dark panels, gold frames, blue
+   name bars. */
+
+body {
+    font-family: LatoLatin;
+    font-size: 22dp;
+    color: #eeeae0;
+    width: 100%;
+    height: 100%;
+}
+
+div { display: block; }
+
+.panel {
+    position: absolute;
+    left: 6%;
+    top: 10%;
+    width: 46%;
+    padding: 18dp 22dp;
+    background-color: #14161cE6;
+    border: 3dp #c6a05c;
+    border-radius: 8dp;
+}
+
+.title {
+    font-size: 30dp;
+    font-weight: bold;
+    color: #f4e2b4;
+    padding-bottom: 10dp;
+    border-bottom: 2dp #c6a05c;
+    margin-bottom: 12dp;
+}
+
+.note {
+    font-size: 16dp;
+    font-weight: normal;
+    color: #9aa0aa;
+}
+
+.row {
+    padding: 8dp 12dp;
+    margin: 6dp 0;
+    background-color: #1d4f8ccc;
+    border-radius: 4dp;
+}
+
+.row:hover, .row:focus {
+    background-color: #2f74c8;
+}
+
+.num {
+    font-weight: bold;
+    color: #f4e2b4;
+    margin-right: 16dp;
+}
+
+.count {
+    float: right;
+    color: #cfe2ff;
+}
+
+.hint {
+    margin-top: 12dp;
+    font-size: 16dp;
+    color: #9aa0aa;
+}
+

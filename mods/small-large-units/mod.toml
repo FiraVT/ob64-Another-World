@@ -1,0 +1,45 @@
+# Build definition for the "Small Large Units" mod.
+#
+# RecompModTool takes this file and the ELF named in `[inputs]` and writes a
+# `.nrm` (the packaged mod the client loads). `tools/build-example-mods.sh`
+# runs the whole thing.
+
+[manifest]
+
+id = "ogre_small_large_units"
+
+version = "1.0.0"
+
+display_name = "Small Large Units"
+
+description = """
+Large characters (Ogres, Dragons, Griffins, Hellhounds, Golems and the rest)
+normally fill two squares of a unit and count as two of its five members. With
+this mod they take one square and count as one member, like every other
+character, so a unit can always field five."""
+
+short_description = "Large characters take one slot."
+
+authors = [ "Ogre Battle 64 Recomp" ]
+
+game_id = "ogrebattle64"
+
+minimum_recomp_version = "0.1.0"
+
+dependencies = [ ]
+
+native_libraries = [ ]
+
+enabled_by_default = false
+
+[inputs]
+
+elf_path = "build/mod.elf"
+
+mod_filename = "small-large-units"
+
+func_reference_syms_file = "../reference/dump.toml"
+data_reference_syms_files = [ "../reference/data_dump.toml" ]
+
+additional_files = [ ]
+

@@ -1,0 +1,306 @@
+/* The Esc menu (options.rml), in the Organize view's parchment style. Laid out
+   on the 1280x720 dp canvas that rml_ui.cpp scales to the window. */
+
+body {
+    font-family: LatoLatin;
+    font-size: 16dp;
+    color: #2b2414;
+    width: 100%;
+    height: 100%;
+    background-color: #10141fd8;
+}
+
+div, button { display: block; }
+span { display: inline; }
+
+#menu {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    width: 980dp;
+    height: 660dp;
+    margin-left: -490dp;
+    margin-top: -330dp;
+}
+
+.win {
+    background-color: #e9e4bb;
+    border: 4dp #c9bd82;
+    border-bottom-color: #9d915a;
+    border-right-color: #9d915a;
+}
+
+#titlebar { display: flex; align-items: center; height: 48dp; padding: 0 16dp; }
+.brand { font-size: 24dp; font-weight: bold; }
+.spacer { flex: 1; }
+.close {
+    padding: 4dp 14dp;
+    background-color: #d8cea6;
+    border: 2dp #b6a465;
+    font-weight: bold;
+}
+.close:hover { border-color: #3a4ba8; }
+
+#tabbar { display: flex; flex-wrap: wrap; margin: 10dp 0; }
+.tab {
+    padding: 6dp 16dp;
+    margin-right: 6dp;
+    background-color: #d8cea6;
+    border: 2dp #b6a465;
+    font-weight: bold;
+}
+.tab:hover { border-color: #3a4ba8; }
+.tab.active { background-color: #3a4ba8; border-color: #1f2a6e; color: #ffffff; }
+.tab.disabled { color: #a0966c; }
+
+#body { height: 500dp; padding: 10dp 12dp; }
+#rows { width: 100%; height: 100%; overflow-y: auto; }
+
+.section {
+    margin: 12dp 0 4dp;
+    font-size: 13dp;
+    font-weight: bold;
+    letter-spacing: 1dp;
+    color: #6d6236;
+}
+
+.row {
+    display: flex;
+    align-items: center;
+    min-height: 34dp;
+    margin-bottom: 3dp;
+    padding: 2dp 10dp;
+    background-color: #ddd3a8;
+    border: 2dp #ddd3a8;
+}
+.row:hover { border-color: #b6a465; }
+.row.selected { background-color: #f6efc8; border-color: #3a4ba8; }
+.row.locked { color: #8a805a; }
+.left { width: 300dp; font-weight: bold; }
+.right { flex: 1; font-size: 14dp; color: #4a4130; }
+/* A save profile's open/close chevron: two borders of a small square, turned to
+   point right when closed and down when open. */
+.arrow {
+    display: inline-block;
+    width: 8dp;
+    height: 8dp;
+    margin: 0dp 12dp 0dp 4dp;
+    border-right: 3dp #3a4ba8;
+    border-bottom: 3dp #3a4ba8;
+    transform: rotate(-45deg);
+}
+.arrow.open { transform: rotate(45deg); }
+
+/* MODS tab: the player's mods as a table (options.rml, ui.cpp ContentMod*).
+   Plainer than the rest of the menu: light rows, a dark header, a status pill
+   per row, and the same column widths in the header and the rows. */
+.modhead, .modrow, .modinfo { display: flex; align-items: center; }
+.modhead {
+    margin-top: 4dp;
+    padding: 6dp 8dp;
+    background-color: #4a4130;
+    color: #f4efd2;
+    font-size: 12dp;
+    font-weight: bold;
+    letter-spacing: 1dp;
+}
+.modrow {
+    min-height: 48dp;
+    padding: 4dp 8dp;
+    background-color: #fbf8ea;
+    border-bottom: 1dp #d8cfa6;
+    border-top: 2dp #fbf8ea;
+    drag: drag-drop;
+}
+.modrow:hover { background-color: #f3eed6; border-top-color: #f3eed6; }
+.modrow.selected { background-color: #e4e8fa; border-top-color: #e4e8fa; }
+.modrow.drop { border-top: 2dp #3a4ba8; }
+.modrow.dragging { opacity: 0.45; }
+.c-grip { width: 18dp; }
+.c-num { width: 30dp; font-weight: bold; color: #6d6236; text-align: right; padding-right: 10dp; }
+.c-on { width: 60dp; }
+.c-name { flex: 1; padding: 2dp 6dp; border: 2dp transparent; }
+.c-status { width: 250dp; padding-left: 8dp; }
+.c-order { width: 72dp; }
+.c-del { width: 56dp; text-align: center; }
+.modhead .c-num { color: #f4efd2; }
+.grip {
+    display: block;
+    width: 10dp;
+    height: 18dp;
+    decorator: image(icons/grip.png);
+    opacity: 0.6;
+}
+.modrow:hover .grip { opacity: 1; }
+.modtitle { font-weight: bold; }
+.modnote { font-size: 13dp; color: #5a5038; }
+.more { font-weight: bold; color: #3a4ba8; }
+.modrow:hover .more { text-decoration: underline; }
+.pill {
+    display: inline-block;
+    padding: 2dp 8dp;
+    font-size: 12dp;
+    font-weight: bold;
+    color: #ffffff;
+    background-color: #7a7058;
+}
+.pill.on { background-color: #2f6a2a; }
+.pill.pending, .pill.warn { background-color: #9a5600; }
+.pill.bad { background-color: #9a2a1e; }
+.switch {
+    display: inline-block;
+    width: 40dp;
+    height: 20dp;
+    background-color: #b8ad80;
+    border: 2dp #8a7f52;
+}
+.switch .knob { display: block; width: 16dp; height: 16dp; background-color: #fbf8ea; }
+.switch.on { background-color: #3a4ba8; border-color: #1f2a6e; }
+.switch.on .knob { margin-left: 20dp; }
+.switch:hover { border-color: #1f2a6e; }
+.icon {
+    display: inline-block;
+    width: 28dp;
+    height: 28dp;
+    margin-right: 4dp;
+    background-color: #f4efd2;
+    border: 1dp #b6a465;
+}
+.icon:hover { background-color: #ffffff; border-color: #3a4ba8; }
+.icon.up { decorator: image(icons/up.png); }
+.icon.down { decorator: image(icons/down.png); }
+.icon.del { decorator: image(icons/delete.png); }
+.icon.del.armed { background-color: #9a2a1e; border-color: #5e140c; decorator: image(icons/delete-armed.png); }
+.icon.dim { opacity: 0.3; }
+/* The cell LEFT/RIGHT has put in focus on the selected row. */
+.switch.focus, .icon.focus { border: 2dp #e0a000; }
+.c-name.focus { border-color: #e0a000; }
+.modinfo {
+    padding: 3dp 8dp 3dp 116dp;
+    background-color: #f4efd8;
+    border-bottom: 1dp #e3dab2;
+    font-size: 13dp;
+}
+.infolabel { width: 120dp; font-weight: bold; color: #6d6236; }
+.infotext { flex: 1; color: #2b2414; }
+.modlink { border: 2dp #f4efd8; }
+.modlink:hover { border-color: #b6a465; }
+.modlink.selected { border-color: #3a4ba8; background-color: #e4e8fa; }
+.infotext.link { color: #3a4ba8; text-decoration: underline; }
+
+/* The DELETE confirmation over the menu (options.rml #confirm). */
+#confirm {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+    height: 100%;
+    background-color: #10141fb0;
+}
+.dialog {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    width: 520dp;
+    margin-left: -260dp;
+    margin-top: -110dp;
+    padding: 18dp 22dp;
+}
+.dtitle { font-size: 22dp; font-weight: bold; color: #9a2a1e; margin-bottom: 10dp; }
+.dtext { margin-bottom: 16dp; }
+.dbuttons { display: flex; }
+.dbtn {
+    padding: 6dp 22dp;
+    margin-right: 10dp;
+    background-color: #d8cea6;
+    border: 2dp #b6a465;
+    font-weight: bold;
+}
+.dbtn:hover { border-color: #3a4ba8; }
+.dbtn.danger { background-color: #9a2a1e; border-color: #5e140c; color: #ffffff; }
+.dbtn.danger:hover { border-color: #e0a000; }
+.dhint { margin-top: 12dp; font-size: 13dp; color: #6d6236; }
+
+.choices { flex: 1; }
+.choice {
+    display: inline-block;
+    margin: 2dp 6dp 2dp 0;
+    padding: 2dp 10dp;
+    background-color: #e9e4bb;
+    border: 2dp #b6a465;
+    font-size: 14dp;
+    font-weight: bold;
+}
+.choice:hover { border-color: #3a4ba8; }
+.choice.current { background-color: #3a4ba8; border-color: #1f2a6e; color: #ffffff; }
+
+.slider { flex: 1; }
+.cell {
+    display: inline-block;
+    width: 22dp;
+    height: 16dp;
+    margin-right: 3dp;
+    background-color: #c9bd82;
+    border: 1dp #6d6236;
+}
+.cell.filled { background-color: #3a4ba8; }
+.slidertext { margin-left: 10dp; font-size: 14dp; }
+
+#hint { margin-top: 8dp; text-align: center; color: #e9e4bb; font-size: 14dp; }
+
+scrollbarvertical { width: 10dp; margin-left: 2dp; }
+scrollbarvertical slidertrack { background-color: #c9bd82; }
+scrollbarvertical sliderbar { background-color: #6d6236; min-height: 24dp; }
+scrollbarvertical sliderarrowdec, scrollbarvertical sliderarrowinc { width: 0; height: 0; }
+scrollbarhorizontal { height: 0; }
+
+/* UI SCALE = LARGE (settings Choice::UiScale): the menu takes most of the
+   canvas and its text grows by about a quarter. */
+#menu.large {
+    width: 1240dp;
+    height: 704dp;
+    margin-left: -620dp;
+    margin-top: -352dp;
+    font-size: 20dp;
+}
+#menu.large .brand { font-size: 28dp; }
+#menu.large #body { height: 520dp; }
+#menu.large .section { font-size: 16dp; }
+#menu.large .row { min-height: 42dp; }
+#menu.large .left { width: 380dp; }
+#menu.large .right,
+#menu.large .choice,
+#menu.large .slidertext { font-size: 17dp; }
+#menu.large .cell { width: 26dp; height: 20dp; }
+
+/* HIGH CONTRAST (settings Choice::Contrast): the same parchment menu with the
+   contrast raised: a lighter page, near-black text, dark brown outlines, and
+   the selection and current choices in deep blue with a thick edge. */
+#menu.contrast { color: #120d04; }
+#menu.contrast .win { background-color: #f4eecb; border-color: #4a3c14; }
+#menu.contrast .row { background-color: #e8dfb3; border-color: #6d5a28; }
+#menu.contrast .row.selected { background-color: #fff7d0; border: 3dp #1f2a6e; }
+#menu.contrast .row.locked { color: #5e5434; }
+#menu.contrast .right { color: #241c0a; }
+#menu.contrast .section { color: #3d3212; }
+#menu.contrast .tab,
+#menu.contrast .close,
+#menu.contrast .choice { background-color: #e3d7a7; border-color: #4a3c14; color: #120d04; }
+#menu.contrast .tab.active,
+#menu.contrast .choice.current { background-color: #1f2a6e; border-color: #0d1236; color: #ffffff; }
+#menu.contrast .cell { background-color: #e3d7a7; border-color: #4a3c14; }
+#menu.contrast .cell.filled { background-color: #1f2a6e; }
+#menu.contrast .modrow { background-color: #ffffff; border-bottom-color: #4a3c14; }
+#menu.contrast .modrow.selected { background-color: #d8defa; }
+#menu.contrast .switch.on { background-color: #1f2a6e; border-color: #0d1236; }
+#menu.contrast .modnote,
+#menu.contrast .infolabel,
+#menu.contrast .c-num { color: #241c0a; }
+#menu.contrast .modhead { background-color: #120d04; }
+#menu.large .c-status { width: 300dp; }
+#menu.large .modnote,
+#menu.large .pill,
+#menu.large .modinfo,
+#menu.large .modhead { font-size: 16dp; }
+#menu.contrast .arrow { border-right-color: #1f2a6e; border-bottom-color: #1f2a6e; }
+

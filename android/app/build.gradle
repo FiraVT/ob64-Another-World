@@ -1,0 +1,56 @@
+// The native libraries are built by CMake outside Gradle (tools/build-android.sh
+// stages libmain.so, libSDL2.so and libc++_shared.so into src/main/jniLibs), so
+// Gradle only compiles the Java side and packages the APK.
+plugins {
+    id "com.android.application"
+}
+
+android {
+    namespace "com.ogrebattle64.recomp"
+    compileSdk 34
+
+    defaultConfig {
+        applicationId "com.ogrebattle64.recomp"
+        minSdk 26
+        targetSdk 34
+        versionCode 1
+        versionName "0.1.0"
+        ndk {
+            abiFilters "arm64-v8a"
+        }
+    }
+
+    sourceSets {
+        main {
+            // SDL's Java glue (SDLActivity and friends), used as is from the
+            // SDL source tree `make sdl2-static` fetched.
+            java.srcDirs += ["../../tools/SDL2-static/SDL2-2.32.10/android-project/app/src/main/java"]
+        }
+    }
+
+    buildTypes {
+        debug {
+            debuggable true
+            jniDebuggable true
+        }
+        release {
+            minifyEnabled false
+            // Signed with the debug key so the APK installs without a keystore.
+            signingConfig signingConfigs.debug
+        }
+    }
+
+    packagingOptions {
+        jniLibs {
+            // The recompiled game is large; keeping the .so uncompressed and
+            // page-aligned lets Android map it straight from the APK.
+            useLegacyPackaging false
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_1_8
+        targetCompatibility JavaVersion.VERSION_1_8
+    }
+}
+

@@ -1,0 +1,492 @@
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index 55f10a5..67ab81b 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -181,14 +181,23 @@ target_link_libraries(RecompModMerger N64Recomp)
+ project(LiveRecomp)
+ add_library(LiveRecomp)
+ 
+-target_sources(LiveRecomp PRIVATE
+-    ${CMAKE_CURRENT_SOURCE_DIR}/LiveRecomp/live_generator.cpp
+-    ${CMAKE_CURRENT_SOURCE_DIR}/lib/sljit/sljit_src/sljitLir.c
+-)
+-
+-target_include_directories(LiveRecomp PRIVATE
+-    ${CMAKE_CURRENT_SOURCE_DIR}/lib/sljit/sljit_src
+-)
++if (EMSCRIPTEN)
++    # The live recompiler generates native machine code via sljit, which does
++    # not exist on WebAssembly. Use a no-op stub so the runtime's mod system
++    # still compiles (code mods simply fail to load).
++    target_sources(LiveRecomp PRIVATE
++        ${CMAKE_CURRENT_SOURCE_DIR}/LiveRecomp/live_generator_wasm.cpp
++    )
++else()
++    target_sources(LiveRecomp PRIVATE
++        ${CMAKE_CURRENT_SOURCE_DIR}/LiveRecomp/live_generator.cpp
++        ${CMAKE_CURRENT_SOURCE_DIR}/lib/sljit/sljit_src/sljitLir.c
++    )
++
++    target_include_directories(LiveRecomp PRIVATE
++        ${CMAKE_CURRENT_SOURCE_DIR}/lib/sljit/sljit_src
++    )
++endif()
+ 
+ target_link_libraries(LiveRecomp N64Recomp)
+ 
+diff --git a/LiveRecomp/live_generator_wasm.cpp b/LiveRecomp/live_generator_wasm.cpp
+new file mode 100644
+index 0000000..9647d5a
+--- /dev/null
++++ b/LiveRecomp/live_generator_wasm.cpp
+@@ -0,0 +1,117 @@
++// No-op LiveRecomp implementation for WebAssembly builds.
++//
++// The live recompiler generates native machine code via sljit, which cannot
++// run on WebAssembly. This stub provides the same symbols so librecomp's mod
++// system compiles unchanged; loading code mods simply fails
++// (recompile_function_live returns false, so generated handles are never
++// marked good). live_recompiler_init() is a no-op.
++//
++// Only compiled when EMSCRIPTEN is defined (see N64Recomp/CMakeLists.txt).
++
++#include <cstdint>
++#include <cstdio>
++#include <ostream>
++#include <span>
++#include <vector>
++
++#include "recompiler/live_recompiler.h"
++
++// Defined here (instead of the real implementation) so the unique_ptr member
++// in LiveGenerator has a complete type for its destructor.
++namespace N64Recomp {
++    struct LiveGeneratorContext {};
++}
++
++namespace N64Recomp {
++
++void live_recompiler_init() {
++    fprintf(stderr, "[LiveRecomp] the live recompiler is unavailable in this (wasm) build; code mods cannot be loaded.\n");
++}
++
++LiveGenerator::LiveGenerator(size_t num_funcs, const LiveGeneratorInputs& inputs) {
++    (void)num_funcs;
++    (void)inputs;
++}
++
++LiveGenerator::~LiveGenerator() = default;
++
++LiveGeneratorOutput LiveGenerator::finish() {
++    return LiveGeneratorOutput{};
++}
++
++// All emit*/process* methods are no-ops; recompile_function_live() always
++// returns false so no generated code is ever considered good.
++void LiveGenerator::process_binary_op(const BinaryOp& op, const InstructionContext& ctx) const { (void)op; (void)ctx; }
++void LiveGenerator::process_unary_op(const UnaryOp& op, const InstructionContext& ctx) const { (void)op; (void)ctx; }
++void LiveGenerator::process_store_op(const StoreOp& op, const InstructionContext& ctx) const { (void)op; (void)ctx; }
++void LiveGenerator::emit_function_start(const std::string& function_name, size_t func_index) const { (void)function_name; (void)func_index; }
++void LiveGenerator::emit_function_end() const {}
++void LiveGenerator::emit_function_call_lookup(uint32_t addr) const { (void)addr; }
++void LiveGenerator::emit_function_call_by_register(int reg) const { (void)reg; }
++void LiveGenerator::emit_function_call_reference_symbol(const Context& context, uint16_t section_index, size_t symbol_index, uint32_t target_section_offset) const { (void)context; (void)section_index; (void)symbol_index; (void)target_section_offset; }
++void LiveGenerator::emit_function_call(const Context& context, size_t function_index) const { (void)context; (void)function_index; }
++void LiveGenerator::emit_named_function_call(const std::string& function_name) const { (void)function_name; }
++void LiveGenerator::emit_goto(const std::string& target) const { (void)target; }
++void LiveGenerator::emit_label(const std::string& label_name) const { (void)label_name; }
++void LiveGenerator::emit_jtbl_addend_declaration(const JumpTable& jtbl, int reg) const { (void)jtbl; (void)reg; }
++void LiveGenerator::emit_branch_condition(const ConditionalBranchOp& op, const InstructionContext& ctx) const { (void)op; (void)ctx; }
++void LiveGenerator::emit_branch_close() const {}
++void LiveGenerator::emit_switch(const Context& recompiler_context, const JumpTable& jtbl, int reg) const { (void)recompiler_context; (void)jtbl; (void)reg; }
++void LiveGenerator::emit_case(int case_index, const std::string& target_label) const { (void)case_index; (void)target_label; }
++void LiveGenerator::emit_switch_error(uint32_t instr_vram, uint32_t jtbl_vram) const { (void)instr_vram; (void)jtbl_vram; }
++void LiveGenerator::emit_switch_close() const {}
++void LiveGenerator::emit_return(const Context& context, size_t func_index) const { (void)context; (void)func_index; }
++void LiveGenerator::emit_check_fr(int fpr) const { (void)fpr; }
++void LiveGenerator::emit_check_nan(int fpr, bool is_double) const { (void)fpr; (void)is_double; }
++void LiveGenerator::emit_cop0_status_read(int reg) const { (void)reg; }
++void LiveGenerator::emit_cop0_status_write(int reg) const { (void)reg; }
++void LiveGenerator::emit_cop1_cs_read(int reg) const { (void)reg; }
++void LiveGenerator::emit_cop1_cs_write(int reg) const { (void)reg; }
++void LiveGenerator::emit_muldiv(InstrId instr_id, int reg1, int reg2) const { (void)instr_id; (void)reg1; (void)reg2; }
++void LiveGenerator::emit_syscall(uint32_t instr_vram) const { (void)instr_vram; }
++void LiveGenerator::emit_do_break(uint32_t instr_vram) const { (void)instr_vram; }
++void LiveGenerator::emit_pause_self() const {}
++void LiveGenerator::emit_trigger_event(uint32_t event_index) const { (void)event_index; }
++void LiveGenerator::emit_comment(const std::string& comment) const { (void)comment; }
++
++LiveGeneratorOutput::~LiveGeneratorOutput() = default;
++
++size_t LiveGeneratorOutput::num_reference_symbol_jumps() const {
++    return 0;
++}
++
++void LiveGeneratorOutput::set_reference_symbol_jump(size_t jump_index, recomp_func_t* func) {
++    (void)jump_index;
++    (void)func;
++}
++
++ReferenceJumpDetails LiveGeneratorOutput::get_reference_symbol_jump_details(size_t jump_index) {
++    (void)jump_index;
++    return ReferenceJumpDetails{};
++}
++
++void LiveGeneratorOutput::populate_import_symbol_jumps(size_t import_index, recomp_func_t* func) {
++    (void)import_index;
++    (void)func;
++}
++
++bool recompile_function_live(LiveGenerator& generator, const Context& context, size_t function_index, std::ostream& output_file, std::span<std::vector<uint32_t>> static_funcs_out, bool tag_reference_relocs) {
++    (void)generator;
++    (void)context;
++    (void)function_index;
++    (void)output_file;
++    (void)static_funcs_out;
++    (void)tag_reference_relocs;
++    // Live recompilation is unavailable on wasm; report failure so mod code is
++    // never loaded.
++    return false;
++}
++
++ShimFunction::ShimFunction(recomp_func_ext_t* to_shim, uintptr_t value) : code(nullptr), func(nullptr) {
++    (void)to_shim;
++    (void)value;
++}
++
++ShimFunction::~ShimFunction() = default;
++
++}  // namespace N64Recomp
+diff --git a/include/recomp.h b/include/recomp.h
+index 73f3e73..9bb80b7 100644
+--- a/include/recomp.h
++++ b/include/recomp.h
+@@ -92,24 +92,58 @@ typedef uint64_t gpr;
+ #define SUB32(a, b) \
+     ((gpr)(int32_t)((a) - (b)))
+ 
++// MMIO / KSEG1 accesses (0xA0000000-0xC0000000: AI/SI/VI/PI registers, PIF,
++// cart). The recompiled code performs raw register access for hardware the
++// port reimplements in the runtime (audio DMA, SI, etc.); without a mapping
++// these would dereference rdram ~4.5 GiB past the buffer (fault in wasm,
++// memory corruption natively). Alias them into an 8 MiB scratch page at the
++// end of the rdram buffer (MMIO_SCRATCH_OFFSET, reserved by the heap init):
++// reads return zero (status registers read "idle/not busy"), writes go
++// nowhere. Runtime-bridged I/O (osCont*, osPi*, osVi*, osAi*) never goes
++// through these macros.
++#define MMIO_SCRATCH_OFFSET 0x1F800000u
++static inline uint64_t recomp_mem_addr(gpr addr) {
++    // N64 addresses flow through the recompiled code sign-extended to 64 bits
++    // (gpr values come from int32 registers), so normalize to the low 32 bits
++    // before the KSEG0/KUSEG/MMIO split.
++    uint64_t a = (uint64_t)(uint32_t)addr;
++    if ((a & 0xE0000000u) == 0xA0000000u) {
++        return (a & 0x7FFFFFu) | MMIO_SCRATCH_OFFSET;
++    }
++    // KUSEG (0x00000000-0x7FFFFFFF) is TLB-mapped on the R4300i, and the N64's
++    // boot ROM maps the first 4 MiB of RDRAM into that window (the address
++    // emulators implement by masking the top three bits). Without it a low
++    // address computes `a - 0x80000000` and faults ~2 GiB below the buffer.
++    // OB64 relies on the alias: on the New Game path the descriptor
++    // interpreter reaches its display-list emitter with a3 = 0 (traced through
++    // game code: 0x800E7A30 -> 0x08880000 -> 0xFFFFFFFF -> 0), which on retail
++    // writes into RDRAM offset 8 instead of faulting -- the game runs the whole
++    // opening. Mirror the low 4 MiB here so those stores land where the
++    // hardware puts them.
++    if (a < 0x80000000u) {
++        return a & 0x003FFFFFu;
++    }
++    return a - 0x80000000u;
++}
++
+ #define MEM_W(offset, reg) \
+-    (*(int32_t*)(rdram + ((((reg) + (offset))) - 0xFFFFFFFF80000000)))
++    (*(int32_t*)(rdram + recomp_mem_addr((gpr)(reg) + (offset))))
+ 
+ #define MEM_H(offset, reg) \
+-    (*(int16_t*)(rdram + ((((reg) + (offset)) ^ 2) - 0xFFFFFFFF80000000)))
++    (*(int16_t*)(rdram + (recomp_mem_addr((gpr)(reg) + (offset)) ^ 2)))
+ 
+ #define MEM_B(offset, reg) \
+-    (*(int8_t*)(rdram + ((((reg) + (offset)) ^ 3) - 0xFFFFFFFF80000000)))
++    (*(int8_t*)(rdram + (recomp_mem_addr((gpr)(reg) + (offset)) ^ 3)))
+ 
+ #define MEM_HU(offset, reg) \
+-    (*(uint16_t*)(rdram + ((((reg) + (offset)) ^ 2) - 0xFFFFFFFF80000000)))
++    (*(uint16_t*)(rdram + (recomp_mem_addr((gpr)(reg) + (offset)) ^ 2)))
+ 
+ #define MEM_BU(offset, reg) \
+-    (*(uint8_t*)(rdram + ((((reg) + (offset)) ^ 3) - 0xFFFFFFFF80000000)))
++    (*(uint8_t*)(rdram + (recomp_mem_addr((gpr)(reg) + (offset)) ^ 3)))
+ 
+ #define SD(val, offset, reg) { \
+-    *(uint32_t*)(rdram + ((((reg) + (offset) + 4)) - 0xFFFFFFFF80000000)) = (uint32_t)((gpr)(val) >> 0); \
+-    *(uint32_t*)(rdram + ((((reg) + (offset) + 0)) - 0xFFFFFFFF80000000)) = (uint32_t)((gpr)(val) >> 32); \
++    *(uint32_t*)(rdram + recomp_mem_addr((gpr)(reg) + (offset) + 4)) = (uint32_t)((gpr)(val) >> 0); \
++    *(uint32_t*)(rdram + recomp_mem_addr((gpr)(reg) + (offset) + 0)) = (uint32_t)((gpr)(val) >> 32); \
+ }
+ 
+ static inline uint64_t load_doubleword(uint8_t* rdram, gpr reg, gpr offset) {
+@@ -424,6 +458,8 @@ typedef struct {
+     uint32_t* f_odd;
+     uint32_t status_reg;
+     uint8_t mips3_float_mode;
++    // Cop0 register file (except Status, which is stored in status_reg for float-mode handling).
++    uint32_t cop0_regs[32];
+ } recomp_context;
+ 
+ // Checks if the target is an even float register or that mips3 float mode is enabled
+@@ -436,6 +472,11 @@ extern "C" {
+ 
+ void cop0_status_write(recomp_context* ctx, gpr value);
+ gpr cop0_status_read(recomp_context* ctx);
++gpr cop0_read(recomp_context* ctx, int reg);
++void cop0_write(recomp_context* ctx, int reg, gpr value);
++void tlb_instruction(recomp_context* ctx, int opcode);
++void eret(recomp_context* ctx);
++void cache_instruction(recomp_context* ctx, int op, uint32_t addr);
+ void switch_error(const char* func, uint32_t vram, uint32_t jtbl);
+ void do_break(uint32_t vram);
+ 
+@@ -466,8 +507,38 @@ extern int32_t* section_addresses;
+ 
+ void recomp_syscall_handler(uint8_t* rdram, recomp_context* ctx, int32_t instruction_vram);
+ 
++// Debug: record the recompiled function a game thread is currently executing
++// (emitted at every recompiled function entry; read by the VI thread's
++// deadlock snapshot), and maintain the per-thread shadow call chain used by
++// debug_dump_call_chain. No-op on the native JIT path.
++//   recomp_trace_entry:  called from the prologue; `ra` is ctx->r31 (the
++//                        address in the caller this frame will return to).
++//   recomp_trace_return: called just before every return; pops this frame.
++void recomp_trace_entry(uint8_t *rdram, uint32_t func_vram, const char* func_name, uint32_t ra);
++void recomp_trace_return(uint8_t *rdram, size_t func_index);
++
+ void pause_self(uint8_t *rdram);
+ 
++void yield_self(uint8_t *rdram);
++
++// Session-18: serialize the game's heap allocator family (func_80070F30 /
++// func_800710DC / func_80071A3C / func_80071E74 / func_80071950 /
++// func_800719E8, plus the outer list-touching funcs func_800712C4 /
++// func_80071644 / func_80071C04 / func_80070C60 / func_80070D20 /
++// func_80071A74 / func_80071B9C). The game assumes cooperative threads (N64:
++// a call-free free-list walk is atomic), but the runtime runs game threads on
++// preemptive host threads, so a concurrent malloc/free can tear an in-flight
++// walk and livelock it with no pageerror. Recursive: the family nests
++// (malloc calls search/unlink/insert; insert recurses). Holders never block
++// (no syscalls inside the set), so no sleep-while-holding deadlock.
++void ogre_heap_lock(void);
++void ogre_heap_unlock(void);
++// RAII-for-C guard for the above (cleanup attribute; clang/GCC C mode).
++static inline void ogre_heap_guard_release(int *slot) {
++    (void)slot;
++    ogre_heap_unlock();
++}
++
+ #ifdef __cplusplus
+ }
+ #endif
+diff --git a/include/recompiler/generator.h b/include/recompiler/generator.h
+index 145bcd0..69a2ff2 100644
+--- a/include/recompiler/generator.h
++++ b/include/recompiler/generator.h
+@@ -3,6 +3,7 @@
+ 
+ #include "recompiler/context.h"
+ #include "operations.h"
++#include <cstdlib>
+ 
+ namespace N64Recomp {
+     struct InstructionContext {
+@@ -53,6 +54,13 @@ namespace N64Recomp {
+         virtual void emit_check_nan(int fpr, bool is_double) const = 0;
+         virtual void emit_cop0_status_read(int reg) const = 0;
+         virtual void emit_cop0_status_write(int reg) const = 0;
++        // Generic cop0 register access. Not supported by the LiveGenerator; abort there.
++        virtual void emit_cop0_read(int reg, int cop0_reg) const { std::abort(); }
++        virtual void emit_cop0_write(int reg, int cop0_reg) const { std::abort(); }
++        // Privileged instructions (TLB operations and exception return).
++        virtual void emit_tlb_instruction(int opcode) const { std::abort(); }
++        virtual void emit_eret() const { std::abort(); }
++        virtual void emit_cache_instruction(int op, int base_reg, int offset) const { std::abort(); }
+         virtual void emit_cop1_cs_read(int reg) const = 0;
+         virtual void emit_cop1_cs_write(int reg) const = 0;
+         virtual void emit_muldiv(InstrId instr_id, int reg1, int reg2) const = 0;
+@@ -90,6 +98,11 @@ namespace N64Recomp {
+         void emit_check_nan(int fpr, bool is_double) const final;
+         void emit_cop0_status_read(int reg) const final;
+         void emit_cop0_status_write(int reg) const final;
++        void emit_cop0_read(int reg, int cop0_reg) const final;
++        void emit_cop0_write(int reg, int cop0_reg) const final;
++        void emit_tlb_instruction(int opcode) const final;
++        void emit_eret() const final;
++        void emit_cache_instruction(int op, int base_reg, int offset) const final;
+         void emit_cop1_cs_read(int reg) const final;
+         void emit_cop1_cs_write(int reg) const final;
+         void emit_muldiv(InstrId instr_id, int reg1, int reg2) const final;
+diff --git a/src/cgenerator.cpp b/src/cgenerator.cpp
+index 94f85c5..7f4e1b1 100644
+--- a/src/cgenerator.cpp
++++ b/src/cgenerator.cpp
+@@ -501,6 +501,30 @@ void N64Recomp::CGenerator::emit_cop0_status_write(int reg) const {
+     fmt::print(output_file, "cop0_status_write(ctx, {});", gpr_to_string(reg));
+ }
+ 
++void N64Recomp::CGenerator::emit_cop0_read(int reg, int cop0_reg) const {
++    fmt::print(output_file, "{} = cop0_read(ctx, {});\n", gpr_to_string(reg), cop0_reg);
++}
++
++void N64Recomp::CGenerator::emit_cop0_write(int reg, int cop0_reg) const {
++    fmt::print(output_file, "cop0_write(ctx, {}, {});\n", cop0_reg, gpr_to_string(reg));
++}
++
++void N64Recomp::CGenerator::emit_tlb_instruction(int opcode) const {
++    fmt::print(output_file, "tlb_instruction(ctx, {});\n", opcode);
++}
++
++void N64Recomp::CGenerator::emit_eret() const {
++    fmt::print(output_file, "eret(ctx);\n");
++}
++
++void N64Recomp::CGenerator::emit_cache_instruction(int op, int base_reg, int offset) const {
++    if (base_reg == 0) {
++        fmt::print(output_file, "cache_instruction(ctx, {}, 0x{:X});\n", op, offset);
++    } else {
++        fmt::print(output_file, "cache_instruction(ctx, {}, ctx->r{} + 0x{:X});\n", op, base_reg, offset);
++    }
++}
++
+ void N64Recomp::CGenerator::emit_cop1_cs_read(int reg) const {
+     fmt::print(output_file, "{} = get_cop1_cs();\n", gpr_to_string(reg));
+ }
+diff --git a/src/recompilation.cpp b/src/recompilation.cpp
+index c228433..ddaf438 100644
+--- a/src/recompilation.cpp
++++ b/src/recompilation.cpp
+@@ -34,6 +34,7 @@ JalResolutionResult resolve_jal(const N64Recomp::Context& context, size_t cur_se
+     uint32_t section_vram_end = cur_section.ram_addr + cur_section.size;
+     bool in_current_section = target_func_vram >= section_vram_start && target_func_vram < section_vram_end;
+     bool exact_match_found = false;
++    bool found_lookup_candidate = false;
+ 
+     // Use a thread local to prevent reallocation across runs and to allow multi-threading in the future.
+     thread_local std::vector<size_t> matched_funcs{};
+@@ -47,6 +48,10 @@ JalResolutionResult resolve_jal(const N64Recomp::Context& context, size_t cur_se
+             // Zero-sized symbol handling. unless there's only one matching target.
+             if (target_func.words.empty()) {
+                 if (!N64Recomp::is_manual_patch_symbol(target_func.vram)) {
++                    // Absolute placeholder for a function that lives outside this ELF
++                    // (e.g. streamed/overlay code). Remember it so the call can be
++                    // resolved with a runtime function lookup instead of erroring out.
++                    found_lookup_candidate = true;
+                     continue;
+                 }
+             }
+@@ -84,6 +89,11 @@ JalResolutionResult resolve_jal(const N64Recomp::Context& context, size_t cur_se
+         // If there were no matches then JAL resolution has failed.
+         // A static can't be created as the target section is unknown.
+         if (matched_funcs.size() == 0) {
++            // If the only matches were absolute placeholders for functions outside
++            // this ELF, resolve the call with a runtime function lookup instead.
++            if (found_lookup_candidate) {
++                return JalResolutionResult::Ambiguous;
++            }
+             return JalResolutionResult::NoMatch;
+         }
+         // If there was an exact match, use it.
+@@ -373,6 +383,17 @@ bool process_instruction(GeneratorType& generator, const N64Recomp::Context& con
+                 // generator.emit_branch_close();
+                 return true;
+             }
++            // Same-section non-function target: create a static function and tail-call it.
++            else if (branch_target >= context.sections[func.section_index].ram_addr &&
++                     branch_target < context.sections[func.section_index].ram_addr + context.sections[func.section_index].size) {
++                fmt::print("[Info] Tail call in {} to static function 0x{:08X}\n", func.name, branch_target);
++                if (!print_func_call_by_address(branch_target, true, true)) {
++                    return false;
++                }
++                print_indent();
++                generator.emit_return(context, func_index);
++                return true;
++            }
+ 
+             fmt::print(stderr, "[Warn] Function {} is branching outside of the function (to 0x{:08X})\n", func.name, branch_target);
+         }
+@@ -424,8 +445,9 @@ bool process_instruction(GeneratorType& generator, const N64Recomp::Context& con
+                 generator.emit_cop0_status_read(rt);
+                 break;
+             default:
+-                fmt::print(stderr, "Unhandled cop0 register in mfc0: {}\n", (int)reg);
+-                return false;
++                print_indent();
++                generator.emit_cop0_read(rt, (int)reg);
++                break;
+             }
+             break;
+         }
+@@ -438,11 +460,30 @@ bool process_instruction(GeneratorType& generator, const N64Recomp::Context& con
+                 generator.emit_cop0_status_write(rt);
+                 break;
+             default:
+-                fmt::print(stderr, "Unhandled cop0 register in mtc0: {}\n", (int)reg);
+-                return false;
++                print_indent();
++                generator.emit_cop0_write(rt, (int)reg);
++                break;
+             }
+             break;
+         }
++    // Privileged instructions: TLB ops and exception return. The runtime treats
++    // the memory space as flat, so these mostly just need to compile and be
++    // semantically safe no-ops.
++    case InstrId::cpu_tlbr:
++    case InstrId::cpu_tlbwi:
++    case InstrId::cpu_tlbwr:
++    case InstrId::cpu_tlbp:
++        print_indent();
++        generator.emit_tlb_instruction((int)instr_id);
++        break;
++    case InstrId::cpu_eret:
++        print_indent();
++        generator.emit_eret();
++        break;
++    case InstrId::cpu_cache:
++        print_indent();
++        generator.emit_cache_instruction((int)instr.GetO32_rt(), rs, (int)instr.Get_immediate());
++        break;
+     // Arithmetic
+     case InstrId::cpu_add:
+     case InstrId::cpu_addu:
+@@ -518,6 +559,18 @@ bool process_instruction(GeneratorType& generator, const N64Recomp::Context& con
+                 print_indent();
+                 generator.emit_return(context, func_index);
+             }
++            // Branch to a target in the same section that isn't a known function start.
++            // Create a static function at the target and tail-call it. This handles
++            // cross-function jumps caused by mis-detected function boundaries.
++            else if (branch_target >= context.sections[func.section_index].ram_addr &&
++                     branch_target < context.sections[func.section_index].ram_addr + context.sections[func.section_index].size) {
++                fmt::print("[Info] Tail call in {} to static function 0x{:08X}\n", func.name, branch_target);
++                if (!print_func_call_by_address(branch_target, true, true)) {
++                    return false;
++                }
++                print_indent();
++                generator.emit_return(context, func_index);
++            }
+             else {
+                 fmt::print(stderr, "Unhandled branch in {} at 0x{:08X} to 0x{:08X}\n", func.name, instr_vram, branch_target);
+                 return false;
+diff --git a/src/symbol_lists.cpp b/src/symbol_lists.cpp
+index 9c8f27d..04cfc57 100644
+--- a/src/symbol_lists.cpp
++++ b/src/symbol_lists.cpp
+@@ -28,6 +28,7 @@ const std::unordered_set<std::string> N64Recomp::reimplemented_funcs {
+     "osSpTaskStartGo",
+     "osSpTaskYield",
+     "osSpTaskYielded",
++    "osSpGetStatus",
+     "__osSpSetPc",
+     // Controller functions
+     "osContInit",
+
