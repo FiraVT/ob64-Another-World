@@ -58,8 +58,9 @@ in a game yet.
 - **Asset replacement.** HD texture and font packs and replacement songs; see
   Graphics and audio below.
 - **Example mods.** The package carries `content/examples/`: `balance-tweak`,
-  `loot-tweaks`, `example-mod` with `example-mod-addon`, and `new-class` with
-  the scripts that give and recruit it. It ships no code mods (`DECISIONS.md`,
+  `loot-tweaks`, and `example-mod` with `example-mod-addon`. The `new-class`
+  example (the Dragon Knight) is the reference for new classes and stays in
+  `app/content/examples/`; the package leaves it out. It ships no code mods (`DECISIONS.md`,
   2026-11-01); `mods/item-grant-log` and `mods/small-large-units` stay in the
   source tree.
 

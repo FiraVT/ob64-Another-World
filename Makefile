@@ -765,6 +765,10 @@ dist: app
 	  test -n "$$src" || { echo "content/ is missing from $(APP_BUILD_DIR); app/CMakeLists.txt copies it after the link"; exit 1; }; \
 	  cp -R "$$src" "$(DIST_DIR)/"; \
 	  echo "==> bundled the content packs (content/)"
+	# The new-class example (the Dragon Knight) is the project's reference for
+	# new classes and stays in the source tree; the package does not carry it
+	# (the maintainer, 2026-11-01).
+	rm -rf "$(DIST_DIR)/content/examples/new-class"
 	# No code mods ship. mods/ stays, empty, for code mods a player adds
 	# (packaging/README-dist.txt); the example mods are JSON and Lua folders
 	# in content/examples/.

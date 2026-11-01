@@ -229,13 +229,10 @@ folder into `user-content/`:
     loot-tweaks/         one script: a changed drop, an item swap, an item log
     example-mod/         a pack and a script together (an "Iron Soldier")
     example-mod-addon/   a mod that needs example-mod and builds on it
-    new-class/           a new class, the Dragon Knight, with its own art
 
 A pack can add a new class: a record in "classes" keyed "<mod id>.<name>" with
 "copy_of" set to the class it starts as. The game gives it an id and keeps it
 in saves/class-ids.json; do not delete that file while saves use new classes.
-`content/examples/new-class/` adds a Dragon Knight and turns your first
-Soldier into one.
 
 A LordlyCaliber project folder (the folder with `project.json` in it) copied
 into `user-content/` applies its class, item and consumable edits. Its other
