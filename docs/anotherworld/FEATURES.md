@@ -130,8 +130,10 @@ in a game yet.
   `screenshot.cpp`.
 - **ROM patches.** Every `.ips` file in `patches/` is applied to the ROM at
   start, so a text fix or fan translation reaches the port. `rom_patch.cpp`.
-- **US revision 0 and revision 1.** The port runs both US cartridges.
-  `docs/anotherworld/notes-revisions.md`.
+- **US revision 0 (in progress).** The app runs only the USA Rev A cartridge
+  (revision 1); `app/src/game.hpp` checks its hash. `make rev0` recompiles the
+  first USA release (revision 0) for development, and no app build runs it
+  yet. `docs/anotherworld/notes-revisions.md` §5.
 
 ## Platforms, modding and packaging
 

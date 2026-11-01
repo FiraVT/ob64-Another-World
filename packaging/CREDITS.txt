@@ -9,7 +9,9 @@ source code is at https://github.com/FiraVT/ob64-Another-World.
 LordlyCaliber, by rempred (MIT license)
     https://github.com/rempred/LordlyCaliber
 
-    An editor for Ogre Battle 64, built on a decompilation of the game.
+    An editor for Ogre Battle 64 that ships a partial decompilation of the
+    game. This project does not run LordlyCaliber; it uses its research, and
+    the port imports LordlyCaliber projects.
 
     The overhaul exists because of it. Before this project found
     LordlyCaliber, the work had reached the new field controls and stopped
@@ -19,15 +21,15 @@ LordlyCaliber, by rempred (MIT license)
 
     - Custom enemy units and spawning: the war director writes the game's
       35-byte enemy unit record (a leader and two member groups of up to
-      three) and follows LordlyCaliber's validator rules for it, including
-      the rule that a large unit has no neighbours. Garrisons, bought units,
-      boss escorts and supply trains are all built this way.
+      three). Garrisons, bought units, boss escorts and supply trains are all
+      built this way.
     - Enemy weapons: the item choice in each member group of that record,
       and the rule that a choice replaces the class's basic weapon in the
-      same slot (squads.js). The enemy weapon upgrades are built on it.
+      same slot (LordlyCaliber's squads.js). The enemy weapon upgrades are
+      built on it.
     - Save data: field names in the save table (hpMax and its neighbours)
       that the field screens read.
-    - The game's code: names for about a thousand of the game's functions
+    - The game's code: names for 1,070 of the game's functions
       (tools/revmap.py, tools/lc_lookup.py), and the decompiled routines used
       to understand the field orders and the town liberation rule.
     - Sprites: the format the Organize screen draws portraits with.
@@ -37,7 +39,8 @@ LordlyCaliber, by rempred (MIT license)
 Ogre Battle 64 recompilation, by lfarroco
     https://github.com/lfarroco/ogre-battle-64-recomp
 
-    The static recompilation of the game that this project is a fork of.
+    The static recompilation of the game that this project is a fork of,
+    at commit 6429179 (2026-10-14).
 
 N64Recomp, by Wiseguy (MIT license)
     The recompiler that turns the N64 code into native code.

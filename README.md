@@ -1,57 +1,60 @@
 # OB64: Another World
 
-An overhaul of the N64 game *Ogre Battle 64: Person of Lordly Caliber* (USA,
-Rev A) that runs natively on PC. The game is statically recompiled with the
-[N64Recomp] toolchain, and the war, the enemy commanders, the classes and the
-item drops are reworked on top of it.
+OB64: Another World runs the Nintendo 64 game *Ogre Battle 64: Person of
+Lordly Caliber* as a native program on Windows, Linux and macOS, and changes
+the game: the enemy builds and deploys new units during a mission, the classes are rebalanced, the mission
+field takes mouse orders, and several menus are new.
 
-The goal is a modern remake: the recompiled game is the starting engine, and
-the project replaces its systems one at a time with native ones that read their
-content from data files and their rules from scripts, so new classes, units,
-cutscenes, missions and maps can be added. The plan is
-[docs/anotherworld/ROADMAP.md](docs/anotherworld/ROADMAP.md); what is built
-today is [docs/anotherworld/FEATURES.md](docs/anotherworld/FEATURES.md).
+**This repository and its releases contain no game data.** You need your own
+dump of the USA Rev A cartridge (see [Play it](#play-it)).
 
-This project is a fork of the Ogre Battle 64 recompilation project,
-[lfarroco/ogre-battle-64-recomp](https://github.com/lfarroco/ogre-battle-64-recomp).
-Its own source code is at [FiraVT/ob64-Another-World](https://github.com/FiraVT/ob64-Another-World).
-[packaging/CREDITS.txt](packaging/CREDITS.txt) lists every project this one is
-built on, and ships in the package.
+## What changes in the game
 
-## Built on LordlyCaliber
+- **A stronger enemy.** The War Director earns money from the towns the enemy
+  holds and spends it on new units during a mission. An enemy commander gives
+  those units jobs: retake towns, raid your headquarters, hunt stragglers.
+- **Class rebalance.** The weak unit families are raised, and a mod can add a
+  new class from a data file.
+- **Field controls.** Select and order units with the mouse, with an army
+  strip and alerts on screen.
+- **New screens.** An Organize screen (F3), a roster, a button legend (F1) and
+  an Esc menu with every setting.
+- **Convenience.** Battle and field speed, auto-play dialogue, save backups and
+  profiles, song replacement, HD texture packs and mods.
 
-The overhaul exists because of rempred's
-[LordlyCaliber](https://github.com/rempred/LordlyCaliber) (MIT), an Ogre Battle
-64 editor built on a decompilation of the game. Before this project found it,
-the work had reached the new field controls and stopped there: the game's data
-was not understood well enough to change what the enemy fields. LordlyCaliber's
-decompiled C, record formats and validator rules supplied that understanding,
-and these parts of the overhaul are built directly on it:
+The options are in the Esc menu. The full list is
+[docs/anotherworld/FEATURES.md](docs/anotherworld/FEATURES.md).
 
-- **Custom enemy units and spawning.** The war director writes the game's own
-  35-byte enemy unit record (leader, then two member groups of up to three) and
-  follows LordlyCaliber's validator rules for it, including the rule that a
-  large unit has no neighbours. Garrisons, bought units, boss escorts and
-  supply trains are all built this way.
-- **Enemy weapons.** The item choice in each member group of that record, and
-  the rule that a choice replaces the class's basic weapon in the same slot
-  (`squads.js`). The enemy weapon upgrades are built on it.
-- **Save data.** Field names in the save table (`hpMax` and its neighbours)
-  that the field screens read.
-- **The game's code.** Names for about a thousand of the game's functions,
-  matched to this port by `tools/revmap.py` and looked up with
-  `tools/lc_lookup.py`, and the decompiled routines used to understand the
-  field orders and the town liberation rule.
-- **Sprites.** The sprite format the Organize screen draws portraits with.
+## How the project is put together
 
-LordlyCaliber is also the planned content editor for this project
-(`docs/anotherworld/design-ecosystem.md`).
-The name follows the series' habit of taking its titles from songs (Queen's
-"Ogre Battle" and "The March of the Black Queen"); "Another World" is a song by
-Anohni.
+The game is not emulated. Its code is translated once into native code, and
+this project changes the game on top of that translation. Three projects stack:
 
-**This repository contains no copyrighted game data.** You must supply your own
-ROM dump (see below).
+1. **[N64Recomp]**, by Wiseguy, statically recompiles N64 machine code into C
+   that compiles into a native program. N64ModernRuntime and the RT64 renderer
+   run that program.
+2. **[lfarroco/ogre-battle-64-recomp](https://github.com/lfarroco/ogre-battle-64-recomp)**,
+   by lfarroco, applies N64Recomp to Ogre Battle 64: the recompiled game, the
+   app around it, the launcher and the settings.
+3. **This project** started as a fork of lfarroco's recompilation at commit
+   `6429179` (2026-10-14) and adds the overhaul. Its history in this
+   repository starts at a single commit; lfarroco's commits are in their
+   repository. FEATURES.md lists only what this project added.
+
+A fourth project supplied most of what is known about the game's data:
+rempred's [LordlyCaliber](https://github.com/rempred/LordlyCaliber), an Ogre
+Battle 64 editor that ships a partial decompilation of the game. This project
+does not run LordlyCaliber. It uses its research (see [Credits](#credits)), and
+the port can load content made in it.
+
+## Where it is going
+
+The goal is a modern remake. The recompiled game is the starting engine, and
+the project replaces its systems one at a time with native ones that read
+their content from data files and their rules from Lua scripts. New classes,
+units, cutscenes, missions and larger maps can then be added without engine
+work. The plan and its order are in
+[docs/anotherworld/ROADMAP.md](docs/anotherworld/ROADMAP.md).
 
 ## Play it
 
@@ -61,6 +64,11 @@ ROM dump (see below).
    Rev A; `.z64`, `.n64` or `.v64`, any file name) into the `roms` folder
    inside the unzipped folder.
 3. Run `ob64-anotherworld.exe`.
+
+The game had two USA releases, and the app runs only the second, Rev A
+(revision 1, header byte `0x3F` = 1). The first USA release, other regions and
+patched ROMs are refused. Support for the first USA release is in progress
+(`docs/anotherworld/notes-revisions.md`).
 
 The app checks the ROM by hash and starts the game. Without a usable ROM it
 opens the start screen, where the ROM row on the **MAIN** tab picks one
@@ -141,6 +149,40 @@ because the app links N64ModernRuntime, which is GPL-3.0.
 
 Third-party components keep their own licenses; see
 [packaging/CREDITS.txt](packaging/CREDITS.txt).
+
+## Credits
+
+[packaging/CREDITS.txt](packaging/CREDITS.txt) lists every project this one is
+built on, with its license, and ships in the package.
+
+**LordlyCaliber.** Before this project found rempred's
+[LordlyCaliber](https://github.com/rempred/LordlyCaliber) (MIT), the work had
+reached the new field controls and stopped there: the game's data was not
+understood well enough to change what the enemy fields. LordlyCaliber's
+decompiled C, record formats and validator rules supplied that understanding.
+These parts are built directly on it:
+
+- **Custom enemy units and spawning.** The War Director writes the game's own
+  35-byte enemy unit record (a leader, then two member groups of up to three).
+  Garrisons, bought units, boss escorts and supply trains are all built this
+  way.
+- **Enemy weapons.** The item choice in each member group of that record, and
+  the rule that a choice replaces the class's basic weapon in the same slot
+  (LordlyCaliber's `squads.js`). The enemy weapon upgrades are built on it.
+- **Save data.** Field names in the save table (`hpMax` and its neighbours)
+  that the field screens read.
+- **The game's code.** Names for 1,070 of the game's functions, matched to this
+  port by `tools/revmap.py` and looked up with `tools/lc_lookup.py`, and the
+  decompiled routines used to understand the field orders and the town
+  liberation rule.
+- **Sprites.** The sprite format the Organize screen draws portraits with.
+
+The port also imports LordlyCaliber projects, so content made in rempred's
+editor plays here (`docs/anotherworld/design-ecosystem.md`).
+
+**The name.** The series takes its titles from songs: Queen's "Ogre Battle" and
+"The March of the Black Queen". "Another World" is a song by Anohni, released
+by Antony and the Johnsons.
 
 ## Legal
 
