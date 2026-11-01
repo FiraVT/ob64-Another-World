@@ -561,7 +561,18 @@ Commands (all addresses are guest `0x80xxxxxx`; output goes to stdout prefixed
 | `save [path]` | write a **checkpoint** (whole RDRAM + the runtime's overlay state). A bare `save` writes `/tmp/ogre-checkpoint-NNNN.ckpt` and remembers it |
 | `load [path]` | **restore** a checkpoint this build wrote — the machine rewinds to the instant of the save and the game re-runs from there. A bare `load` uses the most recent bare `save` |
 | `press <buttons> [polls] [x] [y]` | **hold a synthetic pad press** for `polls` input polls and then release it, so an external tool can walk a menu interactively ("press right", look at the capture, "press a") instead of guessing a wall-clock tap schedule (session 68). `<buttons>` is the `+`-joined `OGRE_TAP_BUTTON` vocabulary (`start`, `a`, `up`, `left`, …), `polls` and the stick values are parsed as **hex** for the poll count and `atof` for `x`/`y`, so `press a 400` is 1024 polls and `press none 60 -1 0` is a full-left analog stick. **A short press is much shorter than it looks: the game polls input about once per VI retrace (measured, session 70: `min=1 max=2 mean=1.01` calls per retrace), so `polls` ≈ emulated frames — `press right 8` is invisible, `press right 2000` walks the map cursor across the world; budget a few hundred polls per cursor step** |
+| `profile <file.rec>` | load a profile save record (`<stamp>-s<slot>.rec`, as the Esc menu's SAVES tab writes them) the way that tab's LOAD does: from any scene the game goes to the title first, then loads. The rest of the line is the path |
+| `shot <file.png>` | save the game window as a PNG (Windows; the Print Screen capture), moved to the path given |
 | `help` | the list |
+
+**Reaching a played state with no input.** `OGRE_AUTOLOAD=<file.rec>` loads a
+profile save record once the title runs; with `OGRE_SCENE=title` a slot-1
+record reaches the world map in about 6 s and a slot-15 (field suspend) record
+the mission field in about 5.5 s. `OGRE_BACKGROUND=1` opens the window without
+taking focus and never confines the pointer, so a scripted run leaves the
+mouse and keyboard to whoever is at the machine; pair it with `OGRE_MOUSE=off`.
+The first run in a new `OGRE_PREF_DIR` can stall about 5 s on its first screen
+(`[hang]` followed by `frames resumed`); later runs in the same folder do not.
 
 `dump` is the one that fixes the "wrong moment" problem: run the game until the
 screen is in the state you want, then drop the command file (or press the bound

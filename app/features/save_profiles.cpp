@@ -279,6 +279,32 @@ std::string load(const Entry& entry) {
     return "Loading " + entry.profile + " (" + entry.stamp + ")...";
 }
 
+bool load_file(const std::filesystem::path& record, std::string& error) {
+    const std::string stem = record.stem().string();
+    const size_t dash = stem.rfind("-s");
+    if (record.extension() != ".rec" || dash == std::string::npos) {
+        error = "not a profile record (<stamp>-s<slot>.rec): " + record.string();
+        return false;
+    }
+    Entry e;
+    e.profile = record.parent_path().filename().string();
+    e.record = record;
+    e.stamp = stem.substr(0, dash);
+    e.slot = std::atoi(stem.c_str() + dash + 2);
+    std::error_code ec;
+    if ((e.slot != 0 && e.slot != 1 && e.slot != 15) || std::filesystem::file_size(record, ec) != slot_size(e.slot)) {
+        error = "not a slot 0, 1 or 15 record of the right size: " + record.string();
+        return false;
+    }
+    std::ifstream details(std::filesystem::path(record).replace_extension(".txt"));
+    std::getline(details, e.where);
+    if (e.where.empty()) {
+        e.where = e.stamp;
+    }
+    load(e);
+    return true;
+}
+
 bool take_close_request() {
     return g_close.exchange(false);
 }
@@ -517,6 +543,25 @@ void frame(uint8_t* rdram, void* ctx) {
         run_save(rdram, static_cast<recomp_context*>(ctx));
     }
     note_title_entry(rdram);
+    // OGRE_AUTOLOAD=<record.rec>: load a profile record once the title runs,
+    // so a test run reaches a played state with no menu input (devtest
+    // scenarios). Stage 1 lets the title run for a second first, as a load
+    // from another scene does.
+    static const char* autoload = std::getenv("OGRE_AUTOLOAD");
+    static bool autoloaded = false;
+    if (autoload != nullptr && autoload[0] != '\0' && !autoloaded && scene_now == 0x04 && g_title_entry != 0) {
+        autoloaded = true;
+        std::string error;
+        if (load_file(autoload, error)) {
+            std::lock_guard<std::mutex> lock(g_mutex);
+            g_title_stage = 1;
+            g_title_wait = 0;
+            std::fprintf(stderr, "[saves] autoload %s\n", autoload);
+        }
+        else {
+            std::fprintf(stderr, "[saves] autoload refused: %s\n", error.c_str());
+        }
+    }
     Entry entry;
     bool load_now = false;
     {

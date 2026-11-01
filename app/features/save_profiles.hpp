@@ -43,6 +43,11 @@ std::vector<Entry> list(size_t max);
 // menu shows; the menu then closes (take_close_request).
 std::string load(const Entry& entry);
 
+// Main thread or console: loads a record file by path, as load() does. The
+// slot comes from the name (`<stamp>-s<slot>.rec`), the profile from the
+// folder. False with `error` set for a name or size that is not a record.
+bool load_file(const std::filesystem::path& record, std::string& error);
+
 // True once after a load or a title return was started, so the menu closes and
 // the game runs.
 bool take_close_request();

@@ -31,6 +31,7 @@
 #include "options_view.hpp"
 #endif
 #include "widescreen.hpp"
+#include "save_profiles.hpp"
 
 #include <algorithm>
 #include <atomic>
@@ -64,6 +65,21 @@ namespace ogre {
 // pump_sdl_events, above it, is the main-thread caller.
 namespace console {
 bool tick();
+}
+
+// OGRE_BACKGROUND=1 (create_window).
+bool background_window() {
+    static const bool on = [] {
+        const char* v = getenv("OGRE_BACKGROUND");
+        return v != nullptr && v[0] != '\0' && v[0] != '0';
+    }();
+    return on;
+}
+
+// The game window, for the console's `shot`.
+SDL_Window* platform_window() {
+    extern Platform g_platform;
+    return g_platform.window;
 }
 
 namespace {
@@ -473,6 +489,12 @@ ultramodern::renderer::WindowHandle create_window(Platform& platform, const char
     int window_width = 1280;
     int window_height = 720;
     widescreen_initial_window_size(window_width, window_height);
+    // OGRE_BACKGROUND=1: a test run (devtest scenarios) opens its window without
+    // taking focus, and the pointer is never confined to it (below), so the
+    // developer keeps the mouse and keyboard while it runs.
+    if (background_window()) {
+        SDL_SetHint(SDL_HINT_WINDOW_NO_ACTIVATION_WHEN_SHOWN, "1");
+    }
     SDL_Window* window = SDL_CreateWindow(title, SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
                                           window_width, window_height, flags);
     if (window == nullptr) {
@@ -874,7 +896,8 @@ void pump_sdl_events(Platform& platform, bool* quit) {
     if (platform.window != nullptr) {
         static bool grabbed = false;
         const bool focused = (SDL_GetWindowFlags(platform.window) & SDL_WINDOW_INPUT_FOCUS) != 0;
-        const bool want = ogre::choice_on(ogre::Choice::ConfinePointer) && focused && !overlay_visible();
+        const bool want =
+            ogre::choice_on(ogre::Choice::ConfinePointer) && focused && !overlay_visible() && !background_window();
         if (want != grabbed) {
             grabbed = want;
             SDL_SetWindowGrab(platform.window, want ? SDL_TRUE : SDL_FALSE);
@@ -1916,7 +1939,32 @@ void console_exec(const std::string& line_in) {
                "[console] save [path]   (checkpoint: RDRAM + overlay state; bare `save` writes\n"
                "[console]                /tmp/ogre-checkpoint-NNNN.ckpt)\n"
                "[console] load [path]   (restore a checkpoint this build wrote; bare `load` uses\n"
-               "[console]                the most recent bare `save`)\n");
+               "[console]                the most recent bare `save`)\n"
+               "[console] profile <file.rec>  (load a profile save record, as the menu's LOAD does)\n"
+               "[console] shot <file.png>     (save the game window as a PNG)\n");
+    } else if (cmd == "profile" || cmd == "shot") {
+        // The rest of the line is the path, so a path may hold spaces.
+        const std::string path = trim_copy(line.substr(tok[0].size()));
+        if (path.empty()) {
+            printf("[console] %s needs a path\n", cmd.c_str());
+        } else if (cmd == "profile") {
+            std::string error;
+            if (ogre::save_profiles::load_file(std::filesystem::path(path), error)) {
+                printf("[console] profile: loading %s\n", path.c_str());
+            } else {
+                printf("[console] profile: %s\n", error.c_str());
+            }
+        } else {
+            const std::filesystem::path written = ogre::screenshot::capture(platform_window());
+            std::error_code ec;
+            if (written.empty()) {
+                printf("[console] shot: no screenshot was taken\n");
+            } else {
+                std::filesystem::rename(written, std::filesystem::path(path), ec);
+                printf("[console] shot: %s%s\n", ec ? written.string().c_str() : path.c_str(),
+                       ec ? " (could not move it)" : "");
+            }
+        }
     } else if (cmd == "press") {
         bool ok = true;
         const uint16_t mask = (ntok > 1) ? parse_button_combo(tok[1], ok) : 0;
