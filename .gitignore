@@ -44,6 +44,8 @@ tools/RecompFrontend/
 # `make sdl2-static`: the pinned real SDL2 fetched and built for a static link
 # (Homebrew's sdl2 on macOS is sdl2-compat, which has no static library).
 tools/SDL2-static/
+# `make dist` on Windows: the DXC 1.7.2212.1 redistributable dxil.dll comes from.
+tools/dxc-redist/
 # The MIPS cross toolchain unpacked by the Windows setup (312 MB of binaries).
 tools/mips-binutils/
 # Release folders made by hand beside the source (they hold ROMs and saves).

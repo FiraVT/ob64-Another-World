@@ -46,13 +46,16 @@ at start and reloads it while the game runs. The project's own class rebalance
 is built this way: it is the content pack `content/class-rebalance.json`.
 
 - **Content packs.** JSON files change the game's classes, attacks, items,
-  consumables and battle rewards by record, field and name. The port reads
-  those tables from the ROM into its own database and writes the changes back
-  into the game. `content-dump/` lists every original record for reference.
+  consumables and battle rewards by record, field and name, and can rename any
+  of them. The port reads those tables from the ROM into its own database and
+  writes the changes back into the game. `content-dump/` lists every original
+  record for reference.
   [design-content-database.md](docs/anotherworld/design-content-database.md)
 - **New classes.** A pack can add a class based on an existing one. The port
-  gives it a new id and keeps it with the saves.
-  [design-new-classes.md](docs/anotherworld/design-new-classes.md)
+  gives it a new id and keeps it with the saves, and Change Class can offer it.
+  A pack can give the class its own portrait, formation figures and battle
+  colours. [design-new-classes.md](docs/anotherworld/design-new-classes.md),
+  [design-class-art.md](docs/anotherworld/design-class-art.md)
 - **Lua scripts.** Scripts react to game events (a mission loading, the field
   updating, an item being granted), read and change content records, replace
   granted items, change a character's class and recruit new characters.

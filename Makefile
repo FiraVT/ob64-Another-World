@@ -500,6 +500,16 @@ SDL2_TARBALL := https://github.com/libsdl-org/SDL/releases/download/release-$(SD
 
 DIST_STATIC_SDL ?= 1
 
+# The dxil.dll the Windows package ships: Microsoft's signed build from the DXC
+# 1.7.2212.1 release (March 2023), whose LICENSE-MS.txt allows distributing
+# dxil.dll in an application. RT64's copy is the December 2022 build, whose
+# license is pre-release terms that do not (docs/anotherworld/DECISIONS.md,
+# 2026-11-01 "dxil.dll"). Both hashes are checked.
+DXC_REDIST_ZIP_URL := https://github.com/microsoft/DirectXShaderCompiler/releases/download/v1.7.2212.1/dxc_2023_03_01.zip
+DXC_REDIST_ZIP_SHA := e4e8cb7326ff7e8a791acda6dfb0cb78cc96309098bfdb0ab1e465dc29162422
+DXC_DXIL_SHA       := 969f358985f11af79402ac52d688319722aaaab3a92790a4cb2cda9e7730063d
+DXC_REDIST_DIR     := tools/dxc-redist
+
 # Extra arguments for every CMake configure (SDL2 and the app). The Windows CI
 # job sets this to `-G Ninja -DCMAKE_C_COMPILER=clang-cl
 # -DCMAKE_CXX_COMPILER=clang-cl`, because the app and the runtime are written
@@ -641,13 +651,24 @@ dist: app
 	# RT64 loads dxcompiler.dll/dxil.dll at runtime on Windows; its CMake copies
 	# them next to the library, i.e. into $(APP_BUILD_DIR)/RT64. They are not
 	# optional: without them the exe fails before the first frame.
+	# dxil.dll is replaced by the DXC_REDIST build above.
 	@if [ "$(DIST_OS)" = "windows" ]; then \
 	  for dll in dxcompiler.dll dxil.dll; do \
 	    src=$$(ls "$(APP_BUILD_DIR)/RT64/$$dll" "$(APP_BUILD_DIR)/$$dll" "$(APP_BUILD_DIR)/Release/RT64/$$dll" 2>/dev/null | head -1); \
 	    test -n "$$src" || { echo "$$dll is missing from $(APP_BUILD_DIR); RT64 copies it next to the library on Windows"; exit 1; }; \
 	    cp "$$src" "$(DIST_DIR)/"; \
 	  done; \
-	  echo "==> bundled the RT64 DXC runtime (dxcompiler.dll, dxil.dll)"; \
+	  dxil="$(DXC_REDIST_DIR)/bin/x64/dxil.dll"; \
+	  if ! echo "$(DXC_DXIL_SHA)  $$dxil" | sha256sum -c --status 2>/dev/null; then \
+	    echo "==> fetching the DXC 1.7.2212.1 redistributable"; \
+	    mkdir -p "$(DXC_REDIST_DIR)"; \
+	    curl -fsSL -o "$(DXC_REDIST_DIR)/dxc.zip" "$(DXC_REDIST_ZIP_URL)" || exit 1; \
+	    echo "$(DXC_REDIST_ZIP_SHA)  $(DXC_REDIST_DIR)/dxc.zip" | sha256sum -c --status || { echo "dxc.zip does not match DXC_REDIST_ZIP_SHA"; exit 1; }; \
+	    (cd "$(DXC_REDIST_DIR)" && cmake -E tar xf dxc.zip) || exit 1; \
+	    echo "$(DXC_DXIL_SHA)  $$dxil" | sha256sum -c --status || { echo "$$dxil does not match DXC_DXIL_SHA"; exit 1; }; \
+	  fi; \
+	  cp "$$dxil" "$(DIST_DIR)/dxil.dll"; \
+	  echo "==> bundled the RT64 DXC runtime (dxcompiler.dll; dxil.dll from DXC 1.7.2212.1)"; \
 	  for dll in msvcp140.dll vcruntime140.dll vcruntime140_1.dll; do \
 	    src=$$(ls "$(APP_BUILD_DIR)/$$dll" "$(APP_BUILD_DIR)/Release/$$dll" 2>/dev/null | head -1); \
 	    test -n "$$src" || { echo "$$dll is missing from $(APP_BUILD_DIR); app/CMakeLists.txt copies the app-local MSVC runtime from VCToolsRedistDir (dxcompiler.dll imports it, and without it the .exe cannot start)"; exit 1; }; \
@@ -716,6 +737,9 @@ dist: app
 	fi
 	cp "$(CURDIR)/packaging/README-dist.txt" "$(DIST_DIR)/README.txt"
 	cp "$(CURDIR)/packaging/CREDITS.txt" "$(DIST_DIR)/CREDITS.txt"
+	# The license texts of the third-party code built into the binary (MIT,
+	# BSD and zlib require them in every copy).
+	cp "$(CURDIR)/packaging/THIRD-PARTY-LICENSES.txt" "$(DIST_DIR)/THIRD-PARTY-LICENSES.txt"
 	# GPL-3.0 (LICENSE): the license text travels with the binary.
 	cp "$(CURDIR)/LICENSE" "$(DIST_DIR)/LICENSE.txt"
 	# The empty roms/ folder the player drops the ROM into; main.cpp tries every

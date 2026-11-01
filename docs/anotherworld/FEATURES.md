@@ -15,14 +15,26 @@ in a game yet.
   battle rewards are loaded from the ROM into the port's own database. JSON
   content packs in `content/` (the project's) and `user-content/` (the
   player's) change them by record, field and name, and reload while the game
-  runs; the database writes the changed bytes into the game's tables. The class
-  rebalance below is such a pack. `content-dump/` in the settings folder holds
-  every original record with its name and fields, for reference.
+  runs; the database writes the changed bytes into the game's tables. A pack
+  can also rename any class, attack, item or consumable. The class rebalance
+  below is such a pack. `content-dump/` in the settings folder holds every
+  original record with its name and fields, for reference.
   `content_db.cpp`, `docs/anotherworld/design-content-database.md`.
-- **New classes** (not played). A pack makes a class with a key and the class
-  it starts as (`copy_of`); the port gives it an id from 172 and keeps it with
-  the saves. It is a special class, like Dio's: a script puts a character in
-  it, and Change Class does not offer it yet. `docs/anotherworld/design-new-classes.md`.
+- **New classes.** A pack makes a class with a key and the class it starts as
+  (`copy_of`); the port gives it an id from 172 and keeps it with the saves,
+  and the class gets battle animation copied from that class. A pack with a
+  `"change_class"` block offers the class in Change Class. Played 2026-11-01:
+  the modern Change Class view over the Organize screen lists the example's
+  Dragon Knight for a Fighter, the change applies, and the character fights.
+  The classic Change Class menu's support is built and not played. Without the
+  block the class is special, like Dio's, and a script puts a character in it.
+  `class_change.cpp`, `class_animation.cpp`,
+  `docs/anotherworld/design-new-classes.md`.
+- **New class art** (not played). A pack's `art` block gives a new class its
+  own portrait (40x48), formation figures (16x24, the ordinary lane) and
+  battle sprite colours; the port builds them into the ROM image as game
+  assets at start, so the game's own loaders draw them. `class_art.cpp`,
+  `docs/anotherworld/design-class-art.md`.
 - **Lua scripts.** `.lua` files in `content/` and `user-content/` react to game
   events, change content records and replace granted items, in a sandbox, and
   reload while the game runs. `lua_runtime.cpp`, `docs/anotherworld/design-lua.md`.

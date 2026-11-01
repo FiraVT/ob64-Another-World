@@ -43,13 +43,21 @@ Ogre Battle 64 recompilation, by lfarroco
     at commit 6429179 (2026-10-14).
 
 N64Recomp, by Wiseguy (MIT license)
-    The recompiler that turns the N64 code into native code.
+    The recompiler that turns the N64 code into native code. Built in with
+    it: rabbitizer, {fmt}, SLJIT, toml++ and ELFIO.
 
 N64ModernRuntime (GPL-3.0)
-    The runtime the recompiled game runs on.
+    The runtime the recompiled game runs on. Built in with it: miniz, o1heap,
+    xxHash, moodycamel::ConcurrentQueue and JSON for Modern C++.
 
 RT64 (MIT license)
-    The renderer.
+    The renderer. Built in with it: plume, re-spirv, Zstandard, Native File
+    Dialog Extended, Dear ImGui, ImPlot, Im3d, HLSL++, ddspp, stb, and the
+    Mupen64Plus plugin API headers (GPL-2.0-or-later).
+
+DirectX Shader Compiler, by Microsoft
+    dxcompiler.dll and dxil.dll, which RT64 uses to compile its shaders on
+    Windows.
 
 RmlUi (MIT license)
     The field, Organize and alert screens.
@@ -57,6 +65,12 @@ RmlUi (MIT license)
 FreeType (FreeType Project License)
     Font rendering for RmlUi. Portions of this software are copyright (c) 2023
     The FreeType Project (https://freetype.org). All rights reserved.
+
+Microsoft Visual C++ runtime
+    msvcp140.dll, msvcp140_atomic_wait.dll, vcruntime140.dll and
+    vcruntime140_1.dll, redistributed under the Visual Studio license terms.
+
+The license texts of the components above are in THIRD-PARTY-LICENSES.txt.
 
 SDL2, by Sam Lantinga (zlib license)
     Windows, input and audio. See SDL2-LICENSE.txt.
