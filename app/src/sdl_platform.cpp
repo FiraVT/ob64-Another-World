@@ -1271,10 +1271,12 @@ void pump_sdl_events(Platform& platform, bool* quit) {
         // by id and quit on its own close event; a close request for the overlay
         // window is ignored, because dismissing the panel is what Escape does.
         // PAUSE WHEN UNFOCUSED (SETTINGS tab): the game window losing focus opens
-        // the Esc menu, which pauses the game until it is closed.
+        // the Esc menu, which pauses the game until it is closed. A test run's
+        // background window (OGRE_BACKGROUND) never pauses: it is not the window
+        // the person at the machine is using.
         if (event.type == SDL_WINDOWEVENT && event.window.event == SDL_WINDOWEVENT_FOCUS_LOST &&
             platform.window != nullptr && event.window.windowID == SDL_GetWindowID(platform.window) &&
-            choice_on(Choice::PauseUnfocused) && !overlay_visible()) {
+            choice_on(Choice::PauseUnfocused) && !overlay_visible() && !background_window()) {
             overlay_toggle();
         }
         if (event.type == SDL_WINDOWEVENT && event.window.event == SDL_WINDOWEVENT_CLOSE &&
@@ -1941,7 +1943,12 @@ void console_exec(const std::string& line_in) {
                "[console] load [path]   (restore a checkpoint this build wrote; bare `load` uses\n"
                "[console]                the most recent bare `save`)\n"
                "[console] profile <file.rec>  (load a profile save record, as the menu's LOAD does)\n"
-               "[console] shot <file.png>     (save the game window as a PNG)\n");
+               "[console] shot <file.png>     (save the game window as a PNG)\n"
+               "[console] savegame        (a profile save, as the menu's SAVE does: world map,\n"
+               "[console]                mission field or battle; `[saves] Saved to ...` names it)\n");
+    } else if (cmd == "savegame") {
+        ogre::save_profiles::request_save();
+        printf("[console] savegame: requested\n");
     } else if (cmd == "profile" || cmd == "shot") {
         // The rest of the line is the path, so a path may hold spaces.
         const std::string path = trim_copy(line.substr(tok[0].size()));
