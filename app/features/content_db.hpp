@@ -117,6 +117,31 @@ struct NewClass {
     std::string art_battle;  // a folder of battle palette swatches
 };
 
+// A "battle_forms" rule (docs/anotherworld/design-battle-transform.md section
+// 6): a fighter of `cls` (or the new class `cls_key`) changes form and attack
+// per strike of a battle. Strike i of the battle uses strikes[i]; a strike past
+// the list keeps the class.
+struct BattleFormStrike {
+    // The classes to fight as for this strike: one, or a list the strike picks
+    // from at random (never the fighter's previous form when the list has
+    // another). Each is an id (`forms`) or a new class key (`form_keys`); both
+    // empty keeps the class.
+    std::vector<int> forms;
+    std::vector<std::string> form_keys;
+    int attack = -1;     // attack id for this strike; -1 takes the form's attack for the row
+    bool breath = false;  // "attack": "breath": the form's breath attack, from any row
+};
+
+struct BattleForm {
+    int cls = -1;
+    std::string cls_key;
+    int attacks = 0;      // strikes in a battle; 0 keeps the class's count
+    bool repeat = false;  // strike i uses strikes[i % strikes.size()]
+    std::vector<BattleFormStrike> strikes;
+};
+constexpr int kMaxBattleStrikes = 9;
+constexpr int kMaxBattleForms = 32;  // classes in one strike's "form" list
+
 // True for an art file name a pack may give: a relative path of 1 to 128
 // characters inside the pack's folder (letters, digits, '-', '_', '.', '/'),
 // with no ".." part and ending in ".png".
@@ -144,6 +169,7 @@ struct Pack {
     std::vector<Edit> edits;
     std::vector<NameEdit> names;
     std::vector<NewClass> new_classes;
+    std::vector<BattleForm> battle_forms;
     // Parts of the source the port does not apply yet (a LordlyCaliber
     // project's other sections, its added classes and items).
     std::vector<std::string> not_applied;
@@ -308,6 +334,22 @@ std::vector<NewClassArt> new_class_art();
 std::optional<uint16_t> class_id(std::string_view key);
 // How many of the 83 new class ids are taken.
 int class_ids_used();
+
+// The battle form rules of every loaded pack with class keys resolved to ids,
+// one per class: a later pack's rule for a class replaces an earlier one's. A
+// rule whose class or form key has no id is left out. Any thread.
+struct BattleFormRule {
+    uint16_t cls;
+    int attacks;
+    bool repeat;
+    struct Strike {
+        std::vector<int> forms;  // empty keeps the class; more than one: pick at random
+        int attack;              // -1 the form's own
+        bool breath;             // the form's breath attack
+    };
+    std::vector<Strike> strikes;
+};
+std::vector<BattleFormRule> battle_form_rules();
 
 // A record's current name: a pack's, else the ROM's. "Short Sword";
 // "Altar of\nResurrection" for a two-line name.

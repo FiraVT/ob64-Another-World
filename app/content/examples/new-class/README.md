@@ -9,7 +9,7 @@ own.
 | file | what it does |
 |---|---|
 | `mod.json` | the mod's id, name and version |
-| `dragon-knight.json` | the class: its stats, gear, the Change Class rules and its art files |
+| `dragon-knight.json` | the class: its stats, gear, the Change Class rules and its art files, and a `battle_forms` rule: each strike turns it into a random elder dragon (Quetzalcoatl, Flarebrass, Ahzi Dahaka, Hydra, Bahamut, Tiamat) that breathes and turns back |
 | `recruit-dragon-knight.lua` | a script that recruits one Dragon Knight at level 5 on the first mission field of a launch |
 | `give-class.lua` | an example of `game.set_class`; turns the first Fighter into a Dragon Knight once per launch. Not needed with Change Class; delete it, or keep it to test quickly |
 | `art/` | the class's images; `art/README.md` says how to make them |

@@ -38,6 +38,22 @@ should not go.
   table's record count and record size before the pack is accepted, and the
   arena has a fixed end. Guest RAM is the emulated N64's memory, which the port
   allocates; a pack never writes host memory or files.
+- **Battle forms** (`battle_forms`, `design-battle-transform.md`). A rule
+  makes the port write, during a battle, the class and class key words (`+0x48`,
+  `+0x4C`) of a fighter in the battle's participant table, which is guest RAM
+  the game allocated; it writes only participants the game has in its table
+  (20 slots, checked against the table's start and stride) and puts their own
+  words back at the next strike, the round reset and the battle's end. Every
+  class and form is checked before the pack is accepted: a class id 1..164 or
+  a new class key, an attack id inside the attack table, 1..9 strikes and
+  attacks, form lists of 1..32 valid classes, `"breath"` as the only attack word, a
+  boolean `repeat`. Fifteen cases in `content_pack_test` cover a rule that is
+  not a list, a missing class, a class past the table, class 0, an attack past
+  the table, no strikes, ten strikes, ten attacks, an unknown field, an empty
+  form list, a list of 33, a list with a class past the table, another attack
+  word and a `repeat` that is not a boolean. A form whose figure
+  the battle cannot load is skipped, because the game's draw spins on a missing
+  figure.
 - **What it can read.** Only its own file. The port lists `content/` beside the
   executable and `user-content/` in the settings folder, and one level of
   folders in each (mod folders, `design-mods.md`); a pack or a `mod.json`
@@ -171,7 +187,7 @@ build; if a case fails, the build fails.
   `user-content/` and three refusals outside it: `design-mods.md` section 7),
   `mod.json` `"url"` (two kept, and nine refused: `file:`, `javascript:`, no
   scheme, a scheme alone, a space, a quote, a control character, 220
-  characters, a number), and 19 files, one valid and 18 hostile: broken JSON, 100,000 levels of nesting, a file over
+  characters, a number), 54 files, 7 valid and 47 hostile (section 2 lists the fifteen battle form cases), among them: broken JSON, 100,000 levels of nesting, a file over
   16 MiB, record ids out of range and negative, values too large, floats, byte
   edits past a record and far outside it, a whole record of the wrong size,
   bad hex, names with control characters, too long, or on a table without

@@ -111,6 +111,130 @@ bool read_change_class(const json& block, NewClass& nc, std::string& error) {
     return true;
 }
 
+// A class in a "battle_forms" rule: a standard class id (1..164) or a new
+// class key.
+bool read_battle_class(const json& value, int& id, std::string& key, std::string& error) {
+    if (value.is_string() && is_class_key(value.get<std::string>())) {
+        key = value.get<std::string>();
+        return true;
+    }
+    int64_t number = 0;
+    if (!parse_value(value, number) || number < 1 || number >= info(Table::Classes).count) {
+        error = "a class id (1.." + std::to_string(info(Table::Classes).count - 1) +
+                ") or a new class key like \"my-mod.dragon-knight\"";
+        return false;
+    }
+    id = static_cast<int>(number);
+    return true;
+}
+
+// The "battle_forms" list (design-battle-transform.md section 6): rules of
+// "class", "strikes" (1..9 objects of "form" and "attack", both optional),
+// "attacks" (1..9, optional) and "repeat" (a boolean, optional). A "form" is a
+// class or a list of 1..32 classes; an "attack" is an attack id or "breath".
+bool read_battle_forms(const json& list, Pack& pack, std::string& error) {
+    if (!list.is_array()) {
+        error = "expected a list of rules";
+        return false;
+    }
+    for (size_t i = 0; i < list.size(); i++) {
+        const json& block = list[i];
+        const std::string where = "rule " + std::to_string(i + 1);
+        if (!block.is_object()) {
+            error = where + ": expected an object";
+            return false;
+        }
+        BattleForm form;
+        const auto cls = block.find("class");
+        if (cls == block.end() || !read_battle_class(*cls, form.cls, form.cls_key, error)) {
+            error = where + ": class: " + (cls == block.end() ? std::string("missing") : error);
+            return false;
+        }
+        const auto strikes = block.find("strikes");
+        if (strikes == block.end() || !strikes->is_array() || strikes->empty() ||
+            strikes->size() > static_cast<size_t>(kMaxBattleStrikes)) {
+            error = where + ": strikes: a list of 1.." + std::to_string(kMaxBattleStrikes) + " strikes";
+            return false;
+        }
+        for (const auto& [key, value] : block.items()) {
+            if (is_note(key) || key == "class" || key == "strikes") {
+                continue;
+            }
+            if (key == "repeat") {
+                if (!value.is_boolean()) {
+                    error = where + ": repeat: true or false";
+                    return false;
+                }
+                form.repeat = value.get<bool>();
+                continue;
+            }
+            int64_t number = 0;
+            if (key != "attacks") {
+                error = where + ": " + key + ": not a field (class, strikes, attacks, repeat)";
+                return false;
+            }
+            if (!parse_value(value, number) || number < 1 || number > kMaxBattleStrikes) {
+                error = where + ": attacks: 1.." + std::to_string(kMaxBattleStrikes);
+                return false;
+            }
+            form.attacks = static_cast<int>(number);
+        }
+        for (size_t s = 0; s < strikes->size(); s++) {
+            const json& entry = (*strikes)[s];
+            const std::string at = where + ": strike " + std::to_string(s + 1);
+            if (!entry.is_object()) {
+                error = at + ": expected an object";
+                return false;
+            }
+            BattleFormStrike strike;
+            for (const auto& [key, value] : entry.items()) {
+                if (is_note(key)) {
+                    continue;
+                }
+                if (key == "form") {
+                    const bool list = value.is_array();
+                    if (list && (value.empty() || value.size() > static_cast<size_t>(kMaxBattleForms))) {
+                        error = at + ": form: a class or a list of 1.." + std::to_string(kMaxBattleForms) + " classes";
+                        return false;
+                    }
+                    for (const json& entry : list ? value : json::array({value})) {
+                        int id = -1;
+                        std::string class_key;
+                        if (!read_battle_class(entry, id, class_key, error)) {
+                            error = at + ": form: " + error;
+                            return false;
+                        }
+                        if (class_key.empty()) {
+                            strike.forms.push_back(id);
+                        } else {
+                            strike.form_keys.push_back(class_key);
+                        }
+                    }
+                    continue;
+                }
+                int64_t number = 0;
+                if (key != "attack") {
+                    error = at + ": " + key + ": not a field (form, attack)";
+                    return false;
+                }
+                if (value.is_string() && value.get<std::string>() == "breath") {
+                    strike.breath = true;
+                    continue;
+                }
+                if (!parse_value(value, number) || number < 0 || number >= info(Table::Attacks).count) {
+                    error = at + ": attack: an attack id (0.." + std::to_string(info(Table::Attacks).count - 1) +
+                            ") or \"breath\"";
+                    return false;
+                }
+                strike.attack = static_cast<int>(number);
+            }
+            form.strikes.push_back(std::move(strike));
+        }
+        pack.battle_forms.push_back(std::move(form));
+    }
+    return true;
+}
+
 // A new class's "art" block: "portrait", "figure_front", "figure_back", each a
 // PNG file relative to the pack's folder (is_art_path), and "battle", a folder
 // of battle palette swatches (is_art_folder).
@@ -529,6 +653,13 @@ std::optional<Pack> parse_pack_checked(std::string_view text, std::string id, st
     pack.source = pack.id;
     for (const auto& [table_name, records] : root.items()) {
         if (is_note(table_name)) {
+            continue;
+        }
+        if (table_name == "battle_forms") {
+            if (!read_battle_forms(records, pack, error)) {
+                error = "battle_forms: " + error;
+                return std::nullopt;
+            }
             continue;
         }
         const std::optional<Table> table = table_by_name(table_name);

@@ -35,6 +35,23 @@ in a game yet.
   battle sprite colours; the port builds them into the ROM image as game
   assets at start, so the game's own loaders draw them. `class_art.cpp`,
   `docs/anotherworld/design-class-art.md`.
+- **Battle figures on demand** (not played). A fighter whose class changes
+  during a battle (a mod or a script) gets its new class's figure loaded at its
+  first draw; before, the game loaded figures only at the battle's start and
+  the draw hung on a class it had not loaded. A full figure cache (20) or a
+  failed load is logged as `[battle-figure]`. `battle_figures.cpp`,
+  `docs/anotherworld/design-battle-transform.md`.
+- **Battle forms** (passed a scripted battle run, not played by hand). A pack's `battle_forms` rule makes a class
+  fight each strike of a battle as another class with its own attack: the
+  example `battle-forms` mod gives every Fighter three strikes, a Slash, a
+  Claw as a Werewolf and Rotten Breath as a Tiamat from any row, with the
+  game's transformation effect. The fighter turns back after its strike; the
+  character's saved class and equipment do not change, and the game's "has
+  changed class" message is not shown. A strike's form can be a list drawn at
+  random, its attack "breath" (the form's own breath), and `repeat` applies
+  the strikes to every strike: the Dragon Knight example turns into a random
+  elder dragon on each strike (passed a scripted battle run). `battle_form.cpp`,
+  `docs/anotherworld/design-battle-transform.md`.
 - **Lua scripts.** `.lua` files in `content/` and `user-content/` react to game
   events, change content records and replace granted items, in a sandbox, and
   reload while the game runs. `lua_runtime.cpp`, `docs/anotherworld/design-lua.md`.
@@ -58,7 +75,7 @@ in a game yet.
 - **Asset replacement.** HD texture and font packs and replacement songs; see
   Graphics and audio below.
 - **Example mods.** The package carries `content/examples/`: `balance-tweak`,
-  `loot-tweaks`, and `example-mod` with `example-mod-addon`. The `new-class`
+  `loot-tweaks`, `example-mod` with `example-mod-addon`, and `battle-forms`. The `new-class`
   example (the Dragon Knight) is the reference for new classes and stays in
   `app/content/examples/`; the package leaves it out. It ships no code mods (`DECISIONS.md`,
   2026-11-01); `mods/item-grant-log` and `mods/small-large-units` stay in the

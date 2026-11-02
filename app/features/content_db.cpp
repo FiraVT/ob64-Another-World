@@ -1076,6 +1076,48 @@ int class_ids_used() {
     return static_cast<int>(g_class_ids.size());
 }
 
+std::vector<BattleFormRule> battle_form_rules() {
+    std::lock_guard lock(records_mutex());
+    const auto resolve = [](int id, const std::string& key) -> int {
+        if (key.empty()) {
+            return id;
+        }
+        const auto found = g_class_ids.find(key);
+        return found == g_class_ids.end() ? -1 : found->second;
+    };
+    std::map<uint16_t, BattleFormRule> by_class;
+    for (const Pack& pack : g_packs) {
+        for (const BattleForm& form : pack.battle_forms) {
+            const int cls = resolve(form.cls, form.cls_key);
+            if (cls <= 0) {
+                continue;
+            }
+            BattleFormRule rule{static_cast<uint16_t>(cls), form.attacks, form.repeat, {}};
+            bool complete = true;
+            for (const BattleFormStrike& strike : form.strikes) {
+                BattleFormRule::Strike out{{}, strike.attack, strike.breath};
+                for (const int id : strike.forms) {
+                    out.forms.push_back(id);
+                }
+                for (const std::string& key : strike.form_keys) {
+                    const int to = resolve(-1, key);
+                    complete = complete && to > 0;
+                    out.forms.push_back(to);
+                }
+                rule.strikes.push_back(std::move(out));
+            }
+            if (complete) {
+                by_class[rule.cls] = std::move(rule);
+            }
+        }
+    }
+    std::vector<BattleFormRule> rules;
+    for (auto& [cls, rule] : by_class) {
+        rules.push_back(std::move(rule));
+    }
+    return rules;
+}
+
 std::vector<std::pair<std::string, std::string>> status() {
     std::lock_guard lock(records_mutex());
     std::vector<std::pair<std::string, std::string>> lines;
@@ -1088,6 +1130,9 @@ std::vector<std::pair<std::string, std::string>> status() {
         std::string what = std::to_string(pack.edits.size()) + " EDITS";
         if (!pack.names.empty()) {
             what += ", " + std::to_string(pack.names.size()) + " NAMES";
+        }
+        if (!pack.battle_forms.empty()) {
+            what += ", " + std::to_string(pack.battle_forms.size()) + " BATTLE FORMS";
         }
         if (!pack.not_applied.empty()) {
             what += ", NOT APPLIED: " + std::to_string(pack.not_applied.size());

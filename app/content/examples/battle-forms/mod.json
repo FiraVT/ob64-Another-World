@@ -1,0 +1,8 @@
+{
+  "_comment": "An example mod that changes a fighter's form during a battle. Copy this folder into user-content/ to try it. docs/anotherworld/design-battle-transform.md describes battle_forms.",
+  "id": "battle-forms",
+  "name": "Battle Forms",
+  "version": "1.0",
+  "author": "OB64: Another World",
+  "description": "Every Fighter strikes three times in a battle: a Slash as a Fighter, a Claw as a Werewolf, then Rotten Breath as a Tiamat from any row. It turns back into a Fighter when the next strike of the battle starts."
+}

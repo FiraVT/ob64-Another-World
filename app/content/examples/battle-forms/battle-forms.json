@@ -1,0 +1,15 @@
+{
+  "_comment": "battle_forms: a rule per class. strikes[i] is strike i of the battle: form = the class to fight as (an id or a new class key), attack = the attack id (content-dump/attacks.json lists them). A strike without a form keeps the class; one without an attack uses the form's attack for its row. attacks = the strikes in a battle.",
+  "battle_forms": [
+    {
+      "_class": "2 Fighter",
+      "class": 2,
+      "attacks": 3,
+      "strikes": [
+        {"_note": "Slash, as a Fighter"},
+        {"form": 42, "attack": 7, "_note": "Werewolf, Claw"},
+        {"form": 68, "attack": 37, "_note": "Tiamat, Rotten Breath (0x25) from any row"}
+      ]
+    }
+  ]
+}

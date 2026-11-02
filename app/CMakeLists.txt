@@ -324,6 +324,8 @@ set(OGRE_APP_SOURCES
     src/hd_backgrounds.cpp
     src/map_cursor.cpp
     features/battle_ai.cpp
+    features/battle_figures.cpp
+    features/battle_form.cpp
     src/mission_cursor.cpp
     src/ram_key.cpp
     features/music_replace.cpp

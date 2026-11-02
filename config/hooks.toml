@@ -331,6 +331,365 @@ code = '''
 decls = ["uint32_t ogre_battle_pick_attack(uint8_t* rdram, uint32_t actor, uint32_t attack)"]
 
 [[hook]]
+name = "battle figure on demand (801C3000)"
+rom = 0x206440
+# func_ovlC_801C2ED0, after func_ovlC_801BE158 gave the handle (sp+0x34) and
+# before the cache scan: a figure the battle did not load at its start is
+# loaded here instead of the draw spinning at 0x801B12C0.
+anchor = '''
+    MEM_W(0X34, ctx->r29) = ctx->r2;
+@@    // 0x801C3000: xori        $v0, $fp, 0x39
+'''
+code = '''
+    // battle figures: load a figure the cache lacks (801C3000, app/features/battle_figures.cpp).
+    ogre_battle_figure_lookup(rdram, ctx);
+'''
+decls = ["void ogre_battle_figure_lookup(uint8_t* rdram, recomp_context* ctx)"]
+
+[[hook]]
+name = "battle form: strike start (801E7FFC)"
+rom = 0x22B27C
+anchor = '''
+@@    // 0x801E7FFC: lw          $v1, 0x6C($s2)
+'''
+code = '''
+    // battle forms: the strike's form at its start (801E7FFC, app/features/battle_form.cpp).
+    ogre_battle_form_strike(rdram, ctx, (uint32_t)ctx->r18, 0x801E7FFCu);
+'''
+decls = ["void ogre_battle_form_strike(uint8_t* rdram, recomp_context* ctx, uint32_t participant, uint32_t site)"]
+
+[[hook]]
+name = "battle form: strike start (801E8080)"
+rom = 0x22B300
+anchor = '''
+@@    // 0x801E8080: lw          $v0, 0x6C($s2)
+'''
+code = '''
+    // battle forms: the strike's form at its start (801E8080, app/features/battle_form.cpp).
+    ogre_battle_form_strike(rdram, ctx, (uint32_t)ctx->r18, 0x801E8080u);
+'''
+decls = ["void ogre_battle_form_strike(uint8_t* rdram, recomp_context* ctx, uint32_t participant, uint32_t site)"]
+
+[[hook]]
+name = "battle form: strike start (801E8254)"
+rom = 0x22B4D4
+anchor = '''
+@@    // 0x801E8254: lw          $v0, 0x6C($s2)
+'''
+code = '''
+    // battle forms: the strike's form at its start (801E8254, app/features/battle_form.cpp).
+    ogre_battle_form_strike(rdram, ctx, (uint32_t)ctx->r18, 0x801E8254u);
+'''
+decls = ["void ogre_battle_form_strike(uint8_t* rdram, recomp_context* ctx, uint32_t participant, uint32_t site)"]
+
+[[hook]]
+name = "battle form: strike start (801E8DE8)"
+rom = 0x22C068
+anchor = '''
+@@    // 0x801E8DE8: lw          $v1, 0x6C($s2)
+'''
+code = '''
+    // battle forms: the strike's form at its start (801E8DE8, app/features/battle_form.cpp).
+    ogre_battle_form_strike(rdram, ctx, (uint32_t)ctx->r18, 0x801E8DE8u);
+'''
+decls = ["void ogre_battle_form_strike(uint8_t* rdram, recomp_context* ctx, uint32_t participant, uint32_t site)"]
+
+[[hook]]
+name = "battle form: strike start (801E8F20)"
+rom = 0x22C1A0
+anchor = '''
+@@    // 0x801E8F20: lw          $v0, 0x6C($s2)
+'''
+code = '''
+    // battle forms: the strike's form at its start (801E8F20, app/features/battle_form.cpp).
+    ogre_battle_form_strike(rdram, ctx, (uint32_t)ctx->r18, 0x801E8F20u);
+'''
+decls = ["void ogre_battle_form_strike(uint8_t* rdram, recomp_context* ctx, uint32_t participant, uint32_t site)"]
+
+[[hook]]
+name = "battle form: strike start (801E9580)"
+rom = 0x22C800
+anchor = '''
+@@    // 0x801E9580: lw          $v1, 0x6C($s2)
+'''
+code = '''
+    // battle forms: the strike's form at its start (801E9580, app/features/battle_form.cpp).
+    ogre_battle_form_strike(rdram, ctx, (uint32_t)ctx->r18, 0x801E9580u);
+'''
+decls = ["void ogre_battle_form_strike(uint8_t* rdram, recomp_context* ctx, uint32_t participant, uint32_t site)"]
+
+[[hook]]
+name = "battle form: strike start (801E9784)"
+rom = 0x22CA04
+anchor = '''
+@@    // 0x801E9784: lw          $v0, 0x6C($s2)
+'''
+code = '''
+    // battle forms: the strike's form at its start (801E9784, app/features/battle_form.cpp).
+    ogre_battle_form_strike(rdram, ctx, (uint32_t)ctx->r18, 0x801E9784u);
+'''
+decls = ["void ogre_battle_form_strike(uint8_t* rdram, recomp_context* ctx, uint32_t participant, uint32_t site)"]
+
+[[hook]]
+name = "battle form: strike start (801EA140)"
+rom = 0x22D3C0
+anchor = '''
+@@    // 0x801EA140: lw          $v1, 0x6C($s6)
+'''
+code = '''
+    // battle forms: the strike's form at its start (801EA140, app/features/battle_form.cpp).
+    ogre_battle_form_strike(rdram, ctx, (uint32_t)ctx->r22, 0x801EA140u);
+'''
+decls = ["void ogre_battle_form_strike(uint8_t* rdram, recomp_context* ctx, uint32_t participant, uint32_t site)"]
+
+[[hook]]
+name = "battle form: strike start (801EA53C)"
+rom = 0x22D7BC
+anchor = '''
+@@    // 0x801EA53C: lw          $t3, 0x94($s6)
+'''
+code = '''
+    // battle forms: the strike's form at its start (801EA53C, app/features/battle_form.cpp).
+    ogre_battle_form_strike(rdram, ctx, (uint32_t)ctx->r22, 0x801EA53Cu);
+'''
+decls = ["void ogre_battle_form_strike(uint8_t* rdram, recomp_context* ctx, uint32_t participant, uint32_t site)"]
+
+[[hook]]
+name = "battle form: strike start (801EB9D0)"
+rom = 0x22EC50
+anchor = '''
+@@    // 0x801EB9D0: lw          $v0, 0x6C($s3)
+'''
+code = '''
+    // battle forms: the strike's form at its start (801EB9D0, app/features/battle_form.cpp).
+    ogre_battle_form_strike(rdram, ctx, (uint32_t)ctx->r19, 0x801EB9D0u);
+'''
+decls = ["void ogre_battle_form_strike(uint8_t* rdram, recomp_context* ctx, uint32_t participant, uint32_t site)"]
+
+[[hook]]
+name = "battle form: strike start (801EBB9C)"
+rom = 0x22EE1C
+anchor = '''
+@@    // 0x801EBB9C: lw          $v0, 0x6C($s3)
+'''
+code = '''
+    // battle forms: the strike's form at its start (801EBB9C, app/features/battle_form.cpp).
+    ogre_battle_form_strike(rdram, ctx, (uint32_t)ctx->r19, 0x801EBB9Cu);
+'''
+decls = ["void ogre_battle_form_strike(uint8_t* rdram, recomp_context* ctx, uint32_t participant, uint32_t site)"]
+
+[[hook]]
+name = "battle form: strike start (801EC14C)"
+rom = 0x22F3CC
+anchor = '''
+@@    // 0x801EC14C: lw          $v1, 0x6C($s2)
+'''
+code = '''
+    // battle forms: the strike's form at its start (801EC14C, app/features/battle_form.cpp).
+    ogre_battle_form_strike(rdram, ctx, (uint32_t)ctx->r18, 0x801EC14Cu);
+'''
+decls = ["void ogre_battle_form_strike(uint8_t* rdram, recomp_context* ctx, uint32_t participant, uint32_t site)"]
+
+[[hook]]
+name = "battle form: strike start (801EC1EC)"
+rom = 0x22F46C
+anchor = '''
+@@    // 0x801EC1EC: lw          $v0, 0x6C($s2)
+'''
+code = '''
+    // battle forms: the strike's form at its start (801EC1EC, app/features/battle_form.cpp).
+    ogre_battle_form_strike(rdram, ctx, (uint32_t)ctx->r18, 0x801EC1ECu);
+'''
+decls = ["void ogre_battle_form_strike(uint8_t* rdram, recomp_context* ctx, uint32_t participant, uint32_t site)"]
+
+[[hook]]
+name = "battle form: strike start (801EC900)"
+rom = 0x22FB80
+anchor = '''
+@@    // 0x801EC900: lw          $v0, 0x6C($s0)
+'''
+code = '''
+    // battle forms: the strike's form at its start (801EC900, app/features/battle_form.cpp).
+    ogre_battle_form_strike(rdram, ctx, (uint32_t)ctx->r16, 0x801EC900u);
+'''
+decls = ["void ogre_battle_form_strike(uint8_t* rdram, recomp_context* ctx, uint32_t participant, uint32_t site)"]
+
+[[hook]]
+name = "battle form: strike start (801ECB4C)"
+rom = 0x22FDCC
+anchor = '''
+@@    // 0x801ECB4C: lw          $v0, 0x6C($s0)
+'''
+code = '''
+    // battle forms: the strike's form at its start (801ECB4C, app/features/battle_form.cpp).
+    ogre_battle_form_strike(rdram, ctx, (uint32_t)ctx->r16, 0x801ECB4Cu);
+'''
+decls = ["void ogre_battle_form_strike(uint8_t* rdram, recomp_context* ctx, uint32_t participant, uint32_t site)"]
+
+[[hook]]
+name = "battle form: strike start (801EDBDC)"
+rom = 0x230E5C
+anchor = '''
+@@    // 0x801EDBDC: lw          $v0, 0x6C($s0)
+'''
+code = '''
+    // battle forms: the strike's form at its start (801EDBDC, app/features/battle_form.cpp).
+    ogre_battle_form_strike(rdram, ctx, (uint32_t)ctx->r16, 0x801EDBDCu);
+'''
+decls = ["void ogre_battle_form_strike(uint8_t* rdram, recomp_context* ctx, uint32_t participant, uint32_t site)"]
+
+[[hook]]
+name = "battle form: attack (801EA414)"
+rom = 0x22D694
+anchor = '''
+@@    // 0x801EA414: lw          $a0, 0x48($s6)
+'''
+code = '''
+    // battle forms: the strike's attack after the lookup (801EA414, app/features/battle_form.cpp).
+    ctx->r2 = (int32_t)ogre_battle_form_attack(rdram, ctx, (uint32_t)ctx->r22, (uint32_t)ctx->r2, 0);
+'''
+decls = ["uint32_t ogre_battle_form_attack(uint8_t* rdram, recomp_context* ctx, uint32_t participant, uint32_t attack, uint32_t kind)"]
+
+[[hook]]
+name = "battle form: attack (801EA5D0)"
+rom = 0x22D850
+anchor = '''
+@@    // 0x801EA5D0: addiu       $a0, $zero, 0x4
+'''
+code = '''
+    // battle forms: the strike's attack after the lookup (801EA5D0, app/features/battle_form.cpp).
+    ctx->r2 = (int32_t)ogre_battle_form_attack(rdram, ctx, (uint32_t)ctx->r22, (uint32_t)ctx->r2, 0);
+'''
+decls = ["uint32_t ogre_battle_form_attack(uint8_t* rdram, recomp_context* ctx, uint32_t participant, uint32_t attack, uint32_t kind)"]
+
+[[hook]]
+name = "battle form: attack (801EA660)"
+rom = 0x22D8E0
+anchor = '''
+@@    // 0x801EA660: addiu       $a0, $zero, 0xB
+'''
+code = '''
+    // battle forms: the strike's attack after the lookup (801EA660, app/features/battle_form.cpp).
+    ctx->r2 = (int32_t)ogre_battle_form_attack(rdram, ctx, (uint32_t)ctx->r22, (uint32_t)ctx->r2, 0);
+'''
+decls = ["uint32_t ogre_battle_form_attack(uint8_t* rdram, recomp_context* ctx, uint32_t participant, uint32_t attack, uint32_t kind)"]
+
+[[hook]]
+name = "battle form: attack (801EA6D4)"
+rom = 0x22D954
+anchor = '''
+@@    // 0x801EA6D4: addiu       $a0, $zero, 0xB
+'''
+code = '''
+    // battle forms: the strike's attack after the lookup (801EA6D4, app/features/battle_form.cpp).
+    ctx->r2 = (int32_t)ogre_battle_form_attack(rdram, ctx, (uint32_t)ctx->r22, (uint32_t)ctx->r2, 0);
+'''
+decls = ["uint32_t ogre_battle_form_attack(uint8_t* rdram, recomp_context* ctx, uint32_t participant, uint32_t attack, uint32_t kind)"]
+
+[[hook]]
+name = "battle form: attack (801EBCE0)"
+rom = 0x22EF60
+anchor = '''
+@@    // 0x801EBCE0: andi        $a0, $v0, 0xFF
+'''
+code = '''
+    // battle forms: the strike's attack after the lookup (801EBCE0, app/features/battle_form.cpp).
+    ctx->r2 = (int32_t)ogre_battle_form_attack(rdram, ctx, (uint32_t)ctx->r17, (uint32_t)ctx->r2, 1);
+'''
+decls = ["uint32_t ogre_battle_form_attack(uint8_t* rdram, recomp_context* ctx, uint32_t participant, uint32_t attack, uint32_t kind)"]
+
+[[hook]]
+name = "battle form: attack (801ECAE8)"
+rom = 0x22FD68
+anchor = '''
+@@    // 0x801ECAE8: lw          $v1, 0x8($s1)
+'''
+code = '''
+    // battle forms: the strike's attack after the lookup (801ECAE8, app/features/battle_form.cpp).
+    ctx->r2 = (int32_t)ogre_battle_form_attack(rdram, ctx, (uint32_t)MEM_W(0X8, ctx->r17), (uint32_t)ctx->r2, 0);
+'''
+decls = ["uint32_t ogre_battle_form_attack(uint8_t* rdram, recomp_context* ctx, uint32_t participant, uint32_t attack, uint32_t kind)"]
+
+[[hook]]
+name = "battle form: compute end (801EFDE0)"
+rom = 0x233060
+# func_ovlX_801EFACC has computed the whole fight; next it takes the fight's
+# length from the fighters' time cursors (+0x94).
+anchor = '''
+@@    // 0x801EFDE0: addu        $s0, $zero, $zero
+'''
+code = '''
+    // battle forms: every form goes back at the end of the computed fight (801EFDE0, app/features/battle_form.cpp).
+    ogre_battle_form_compute_end(rdram, ctx);
+'''
+decls = ["void ogre_battle_form_compute_end(uint8_t* rdram, recomp_context* ctx)"]
+
+[[hook]]
+name = "battle form: event 58 record (801DDC6C)"
+rom = 0x220EEC
+# The playback's event 58: $s4 the fighter, $v1 its character record, before
+# the class, key and equipment writes.
+anchor = '''
+@@    // 0x801DDC6C: lw          $v0, 0x48($s4)
+'''
+code = '''
+    // battle forms: keep the character record of a port form (801DDC6C, app/features/battle_form.cpp).
+    ogre_battle_form_record_pre(rdram, (uint32_t)ctx->r20, (uint32_t)ctx->r3);
+'''
+decls = ["void ogre_battle_form_record_pre(uint8_t* rdram, uint32_t participant, uint32_t record)"]
+
+[[hook]]
+name = "battle form: event 58 done (801DDCD0)"
+rom = 0x220F50
+anchor = '''
+@@    // 0x801DDCD0: andi        $v0, $v1, 0x800
+'''
+code = '''
+    // battle forms: undo event 58's record writes for a port form (801DDCD0, app/features/battle_form.cpp).
+    ogre_battle_form_record_post(rdram, (uint32_t)ctx->r20);
+'''
+decls = ["void ogre_battle_form_record_post(uint8_t* rdram, uint32_t participant)"]
+
+[[hook]]
+name = "battle form: change message (801AFBF0)"
+rom = 0x1F3030
+# func_ovlC_801AFB2C after func_ovlC_801AF9D8 opened "<name> has changed class."; $s1 the fighter.
+anchor = '''
+@@    // 0x801AFBF0: lw          $ra, 0x5C($sp)
+'''
+code = '''
+    // battle forms: no "has changed class." message for a port form (801AFBF0, app/features/battle_form.cpp).
+    ogre_battle_form_message(rdram, ctx, (uint32_t)ctx->r17);
+'''
+decls = ["void ogre_battle_form_message(uint8_t* rdram, recomp_context* ctx, uint32_t participant)"]
+
+[[hook]]
+name = "battle form: round reset (801AFF84)"
+rom = 0x1F33C4
+# Before the round reset reads the class for the attack count (0x801AFF90).
+anchor = '''
+@@    // 0x801AFF84: lw          $a0, 0x58($s3)
+'''
+code = '''
+    // battle forms: back to the class at the round reset (801AFF84, app/features/battle_form.cpp).
+    ogre_battle_form_reset(rdram, ctx, (uint32_t)ctx->r19);
+'''
+decls = ["void ogre_battle_form_reset(uint8_t* rdram, recomp_context* ctx, uint32_t participant)"]
+
+[[hook]]
+name = "battle form: battle end (801B00D0)"
+rom = 0x1F3510
+# func_ovlC_801B00D0 tears the battle down; the participant table is still valid.
+anchor = '''
+@@    // 0x801B00D0: lui         $v0, 0x801D
+'''
+code = '''
+    // battle forms: every fighter back to its class at the battle's end (801B00D0, app/features/battle_form.cpp).
+    ogre_battle_form_end(rdram, ctx);
+'''
+decls = ["void ogre_battle_form_end(uint8_t* rdram, recomp_context* ctx)"]
+
+[[hook]]
 name = "centurion command, round reset (801AFFA4)"
 rom = 0x1F33E4
 anchor = '''

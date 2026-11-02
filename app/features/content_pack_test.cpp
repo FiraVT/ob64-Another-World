@@ -55,6 +55,40 @@ std::string nested(int depth) {
 std::vector<Case> cases() {
     return {
         {"a plain pack is read", R"({"classes":{"34":{"str_base":92}},"items":{"1":{"name":"Iron Fang"}}})", true},
+        {"a battle_forms rule is read",
+         R"({"battle_forms":[{"class":2,"attacks":3,"strikes":[{},{"form":42,"attack":7},{"form":"test-mod.dragon-knight"}]}]})",
+         true},
+        {"battle_forms that is not a list", R"({"battle_forms":{"class":2}})", false},
+        {"a battle_forms rule without a class", R"({"battle_forms":[{"strikes":[{}]}]})", false},
+        {"a battle_forms class past the table", R"({"battle_forms":[{"class":165,"strikes":[{}]}]})", false},
+        {"a battle_forms rule with no strikes", R"({"battle_forms":[{"class":2,"strikes":[]}]})", false},
+        {"a battle_forms rule with ten strikes",
+         R"({"battle_forms":[{"class":2,"strikes":[{},{},{},{},{},{},{},{},{},{}]}]})", false},
+        {"a battle_forms form of class 0", R"({"battle_forms":[{"class":2,"strikes":[{"form":0}]}]})", false},
+        {"a battle_forms attack past the attack table",
+         R"({"battle_forms":[{"class":2,"strikes":[{"attack":159}]}]})", false},
+        {"a battle_forms attack count of 10", R"({"battle_forms":[{"class":2,"attacks":10,"strikes":[{}]}]})", false},
+        {"a battle_forms field the port does not know",
+         R"({"battle_forms":[{"class":2,"strikes":[{"form":42,"hp":5}]}]})", false},
+        {"a battle_forms rule with a random form list and a breath is read",
+         R"({"battle_forms":[{"class":"test-mod.dragon-knight","repeat":true,"strikes":[{"form":[57,58,"test-mod.wyrm"],"attack":"breath"}]}]})",
+         true},
+        {"a battle_forms form list that is empty", R"({"battle_forms":[{"class":2,"strikes":[{"form":[]}]}]})", false},
+        {"a battle_forms form list of 33 classes",
+         R"({"battle_forms":[{"class":2,"strikes":[{"form":[)" + [] {
+             std::string list;
+             for (int i = 0; i < 33; i++) {
+                 list += (i ? "," : "") + std::string("57");
+             }
+             return list;
+         }() + R"(]}]}]})",
+         false},
+        {"a battle_forms form list with a class past the table",
+         R"({"battle_forms":[{"class":2,"strikes":[{"form":[57,200]}]}]})", false},
+        {"a battle_forms attack word other than breath",
+         R"({"battle_forms":[{"class":2,"strikes":[{"attack":"fire"}]}]})", false},
+        {"a battle_forms repeat that is not a boolean",
+         R"({"battle_forms":[{"class":2,"repeat":1,"strikes":[{}]}]})", false},
         {"broken JSON", R"({"classes":)", false},
         {"a document 100000 levels deep", nested(100000), false},
         {"a file over the size limit", std::string(kMaxPackFileSize + 1, ' '), false},

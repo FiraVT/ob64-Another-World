@@ -28,5 +28,15 @@
         "battle": "art/battle"
       }
     }
-  }
+  },
+  "battle_forms": [
+    {
+      "_comment": "Each of the Dragon Knight's strikes: it turns into one of the six elder dragons at random (never the same one twice in a row), uses that dragon's breath from any row, and turns back into a Dragon Knight before the next strike. 63 Quetzalcoatl, 64 Flarebrass, 65 Ahzi Dahaka, 66 Hydra, 67 Bahamut, 68 Tiamat.",
+      "class": "new-class-example.dragon-knight",
+      "repeat": true,
+      "strikes": [
+        {"form": [63, 64, 65, 66, 67, 68], "attack": "breath"}
+      ]
+    }
+  ]
 }

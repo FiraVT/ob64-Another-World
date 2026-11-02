@@ -43,6 +43,8 @@
 
 #include "ultramodern/ultramodern.hpp"
 
+#include "battle_form.hpp"
+
 namespace {
 
 constexpr uint32_t BATTLE_STATE = 0x801CE8DCu;
@@ -148,9 +150,13 @@ int centurions_on_side(const uint8_t* rdram, uint32_t actor) {
 
 }  // namespace
 
-extern "C" uint32_t ogre_battle_pick_attack(uint8_t* /*generated_rdram*/, uint32_t actor,
+extern "C" uint32_t ogre_battle_pick_attack(uint8_t* generated_rdram, uint32_t actor,
                                             uint32_t attack) {
     attack &= 0xFFu;
+    // A battle form rule's attack for this strike comes first (battle_form.cpp).
+    if (const uint32_t form_attack = ogre::battle_form::attack(generated_rdram, nullptr, actor, attack, true); form_attack != attack) {
+        return form_attack;
+    }
     if (attack != ATTACK_FAERIE_KISS || !faerie_heal_enabled()) {
         return attack;
     }
@@ -165,7 +171,9 @@ extern "C" uint32_t ogre_battle_pick_attack(uint8_t* /*generated_rdram*/, uint32
     return attack;
 }
 
-extern "C" uint32_t ogre_battle_attack_count(uint8_t* /*generated_rdram*/, uint32_t actor, uint32_t count) {
+extern "C" uint32_t ogre_battle_attack_count(uint8_t* generated_rdram, uint32_t actor, uint32_t count) {
+    // A battle form rule's "attacks" replaces the class's count (battle_form.cpp).
+    count = ogre::battle_form::attack_count(generated_rdram, actor, count);
     if (!centurion_command_enabled()) {
         return count;
     }
