@@ -6,7 +6,10 @@
 
 #include "map_cursor.hpp"
 
+#include "camera_zoom.hpp"
+
 #include <algorithm>
+#include <cmath>
 #include <atomic>
 #include <cstdint>
 #include <cstdio>
@@ -53,6 +56,14 @@ std::atomic<int> g_mouse_y{0};
 // names an edge, so the direction is computed where the pointer is clamped into
 // the framebuffer's range rather than where `g_mouse_live` is true.
 std::atomic<uint16_t> g_edge_direction{0};
+
+// The pointer's framebuffer pixel clamped into the picture, kept while the
+// pointer is over the window, inside the picture or not. With the map zoomed
+// (camera_zoom.cpp) the edge direction depends on the view as well, so the
+// game thread recomputes it from this pixel every frame.
+std::atomic<bool> g_in_window{false};
+std::atomic<int> g_fb_x{0};
+std::atomic<int> g_fb_y{0};
 
 // The map module's cursor draw sets this every time it runs, and the input side
 // reads it, so the `A` and the edge direction are not injected while another
@@ -234,6 +245,9 @@ extern "C" void ogre_map_cursor_note_mouse(int window_x, int window_y, int win_w
         window_to_framebuffer(window_x, window_y, win_w, win_h, draw_w, draw_h, fb_x, fb_y);
     // The edge push uses the clamped pixel, so a pointer in the pillarbox (or
     // outside a fullscreen window's picture) still scrolls the map.
+    g_fb_x.store(fb_x, std::memory_order_relaxed);
+    g_fb_y.store(fb_y, std::memory_order_relaxed);
+    g_in_window.store(true, std::memory_order_relaxed);
     const uint16_t direction = edge_direction_for(fb_x, fb_y);
     const uint16_t previous = g_edge_direction.exchange(direction, std::memory_order_relaxed);
     if (direction != previous && log_enabled()) {
@@ -253,7 +267,19 @@ extern "C" void ogre_map_cursor_note_mouse(int window_x, int window_y, int win_w
 
 void ogre_map_cursor_clear() {
     g_mouse_live.store(false, std::memory_order_relaxed);
+    g_in_window.store(false, std::memory_order_relaxed);
     g_edge_direction.store(0, std::memory_order_relaxed);
+}
+
+// The pointer's framebuffer pixel while it places the cursor, for the zoomed
+// map's edge pan (camera_zoom.cpp). Game thread.
+extern "C" bool ogre_map_cursor_pointer(int* fb_x, int* fb_y) {
+    if (!enabled() || !g_mouse_live.load(std::memory_order_acquire)) {
+        return false;
+    }
+    *fb_x = g_mouse_x.load(std::memory_order_relaxed);
+    *fb_y = g_mouse_y.load(std::memory_order_relaxed);
+    return true;
 }
 
 // Called by `settings.cpp` when the MOUSE ENABLED row is applied.
@@ -387,7 +413,30 @@ extern "C" void ogre_map_cursor(uint8_t* rdram, int32_t state) {
         }
     }
 
+    // A zoomed map (camera_zoom.cpp) shows the game's screen scaled about a
+    // view the port keeps, so the pointer's pixel is mapped back to the game's
+    // pixel, and the edge push is measured there: it scrolls the game when the
+    // pointer names a place outside the game's own window onto the map. A
+    // pointer on the frame places the cursor at the frame's edge.
+    const bool zoomed = ogre::camera_zoom::map_zoomed();
+    if (zoomed && g_in_window.load(std::memory_order_relaxed)) {
+        float gx = 0.0f;
+        float gy = 0.0f;
+        ogre::camera_zoom::map_unzoom(static_cast<float>(g_fb_x.load(std::memory_order_relaxed)),
+                                      static_cast<float>(g_fb_y.load(std::memory_order_relaxed)), gx, gy);
+        g_edge_direction.store(edge_direction_for(static_cast<int>(std::lround(gx)), static_cast<int>(std::lround(gy))),
+                               std::memory_order_relaxed);
+    }
     if (!live) {
+        return;
+    }
+    if (zoomed) {
+        float gx = 0.0f;
+        float gy = 0.0f;
+        ogre::camera_zoom::map_unzoom(std::clamp(static_cast<float>(mouse_x), 32.0f, 287.0f),
+                                      std::clamp(static_cast<float>(mouse_y), 32.0f, 216.0f), gx, gy);
+        write_s16(rdram, pointer + kCursorX, static_cast<int16_t>(std::lround(gx)));
+        write_s16(rdram, pointer + kCursorY, static_cast<int16_t>(std::lround(gy)));
         return;
     }
     write_s16(rdram, pointer + kCursorX, static_cast<int16_t>(mouse_x));

@@ -2052,105 +2052,6 @@ int refit_template(uint8_t* rdram, uint32_t address, int base, int mission, Rng&
     return refits;
 }
 
-// The boss unit gets up to two more members (developer, 2026-10-30: each boss
-// fight should add one or two themed units). A unit record holds five members
-// (0x80197210 + unit*0x19: +0x02..+0x06, squares +0x07..+0x0B), so the boss
-// unit grows only to five places (a large member takes two); a boss unit
-// already at five keeps its size. A member joins the boss's generic escort
-// group while it has room (three per group); otherwise a second group is
-// added from the mission's own member pool, sharing the escorts' family (or
-// flying, when the unit flies), filling a missing role first (R, then S, then
-// F) and weighted by class_value. The new members' level offset is the
-// escorts' (or the boss's minus one).
-int reinforce_boss(uint8_t* rdram, uint32_t address, int base, int mission, const std::map<int, int>& members,
-                   Rng& rng) {
-    int added = 0;
-    for (int step = 0; step < 2; step++) {
-        const Template t = read_template(rdram, address);
-        int used_places = place_cost(rdram, t.leader);
-        bool used[10] = {};
-        if (t.square >= 1 && t.square <= 9) {
-            used[t.square] = true;
-        }
-        for (int g = 0; g < 2; g++) {
-            if (t.groups[g].count > 0) {
-                used_places += places(rdram, t.groups[g].cls, t.groups[g].count);
-                for (uint32_t i = 0; i < 3; i++) {
-                    const int sq = rd8(rdram, address + (g == 0 ? 0x07u : 0x10u) + 6 + i);
-                    if (sq >= 1 && sq <= 9) {
-                        used[sq] = true;
-                    }
-                }
-            }
-        }
-        const Template::Group& a = t.groups[0];
-        // Room in the escort group.
-        if (a.count > 0 && a.count < 3 && !story_class(a.cls) &&
-            used_places + places(rdram, a.cls, 1) <= 5) {
-            const std::vector<int> free = squares_for(rdram, a.cls, used);
-            if (!free.empty()) {
-                const uint32_t base_a = address + 0x07u;
-                for (uint32_t i = 0; i < 3; i++) {
-                    if (rd8(rdram, base_a + 6 + i) == 0) {
-                        wr8(rdram, base_a + 6 + i, static_cast<uint8_t>(free[0]));
-                        break;
-                    }
-                }
-                std::fprintf(stderr, "[enemy] boss escort +1 %s\n", class_name(rdram, a.cls).c_str());
-                added++;
-                continue;
-            }
-        }
-        // A second group.
-        if (t.groups[1].count > 0 || used_places >= 5) {
-            break;
-        }
-        const ClassRole* own = a.count > 0 ? class_role(a.cls) : nullptr;
-        const bool air = air_unit(rdram, t);
-        bool has[128] = {};
-        if (const ClassRole* lead = class_role(t.leader)) {
-            has[static_cast<int>(lead->role)] = true;
-        }
-        if (own != nullptr) {
-            has[static_cast<int>(own->role)] = true;
-        }
-        const char want = !has['R'] ? 'R' : !has['S'] ? 'S' : 'F';
-        const int level = base + (a.count > 0 ? a.level : t.leader_level - 1);
-        std::map<int, int> weights;
-        for (const auto& [cls, n] : members) {
-            const ClassRole* r = class_role(cls);
-            if (r == nullptr || r->role != want || r->debut > mission || story_class(cls) ||
-                used_places + places(rdram, cls, 1) > 5) {
-                continue;
-            }
-            if (air ? !flies(rdram, cls) : (own != nullptr && (r->family & own->family) == 0)) {
-                continue;
-            }
-            weights[cls] = std::max(1, static_cast<int>(class_value(rdram, cls, level) / 50.0));
-        }
-        const int pick = rng.pick(weights, -1);
-        if (pick == 0) {
-            break;
-        }
-        const std::vector<int> free = squares_for(rdram, pick, used);
-        if (free.empty()) {
-            break;
-        }
-        const uint32_t gb = address + 0x10u;
-        wr8(rdram, gb, static_cast<uint8_t>(pick));
-        wr8(rdram, gb + 1, static_cast<uint8_t>(level - base));
-        for (uint32_t i = 0; i < 4; i++) {
-            wr8(rdram, gb + 2 + i, 0);
-        }
-        wr8(rdram, gb + 6, static_cast<uint8_t>(free[0]));
-        wr8(rdram, gb + 7, 0);
-        wr8(rdram, gb + 8, 0);
-        std::fprintf(stderr, "[enemy] boss escort new group %s (%c)\n", class_name(rdram, pick).c_str(), want);
-        added++;
-    }
-    return added;
-}
-
 bool mix_template(uint8_t* rdram, uint32_t address, const std::map<int, int>& members, Rng& rng) {
     const Template t = read_template(rdram, address);
     const Template::Group& a = t.groups[0];
@@ -2355,6 +2256,19 @@ int difficulty_level() {
     return tactics_level();
 }
 
+int boss_additions(int mission) {
+    const int level = tactics_level();
+    Rng rng{(g_war_seed ^ static_cast<uint32_t>(mission * 8191 + 0xB055)) | 1u};
+    rng.next();
+    if (level >= 2) {
+        return 1 + static_cast<int>(rng.next() % 4u);
+    }
+    if (level == 1 && mission > 10) {
+        return 1 + static_cast<int>(rng.next() % 2u);
+    }
+    return 1;
+}
+
 int elite_cap_now(int mission, double hours) {
     int cap = elite_cap(mission);
     if (tactics_level() >= 3) {
@@ -2440,7 +2354,10 @@ void garrison(uint32_t templates, uint32_t spawn_list) {
         if (i == 0) {
             boss_id = id;
         }
-        if (i == 0 || is_story(t)) {
+        // A story unit with a generic class (Tenne Plains' talking Wizard) is
+        // marked only by the story unit list (content_db::story_unit).
+        const int slot = rd8(rdram, entry + 2) & 0x7F;
+        if (i == 0 || is_story(t) || content::story_unit(mission, slot)) {
             generic[id] = false;  // a template the story uses is never rewritten
             continue;
         }
@@ -2527,7 +2444,6 @@ void garrison(uint32_t templates, uint32_t spawn_list) {
         if (ranks) {
             Rng rng{(g_war_seed ^ static_cast<uint32_t>(mission * 3359 + boss_id * 51749 + 43)) | 1u};
             promoted += promote_template(rdram, address, base, mission, true, rng);
-            reinforce_boss(rdram, address, base, mission, members, rng);
         }
         if (formations) {
             Rng rng{(g_war_seed ^ static_cast<uint32_t>(mission * 6271 + boss_id * 92821 + 19)) | 1u};

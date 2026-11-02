@@ -42,9 +42,10 @@ constexpr int MAX_HANDLER_ERRORS = 10;
 // A script file larger than this is not loaded.
 constexpr uintmax_t MAX_SCRIPT_SIZE = 1024u * 1024u;
 
-constexpr std::array<const char*, 11> EVENTS = {"mission_load", "field_update",  "item_granted",
-                                                "field_frame",  "frame",         "battle_start",
-                                                "battle_end",   "battle_attack", "battle_attack_count",
+constexpr std::array<const char*, 14> EVENTS = {"mission_load",  "field_update",     "item_granted",
+                                                "field_frame",   "frame",            "battle_start",
+                                                "battle_end",    "battle_attack",    "battle_attack_count",
+                                                "battle_status", "battle_dot",       "battle_round_end",
                                                 "class_alignment", "unit_size"};
 
 // A battle on the mission field runs as scene 0x0D with the battle bank (ROM
@@ -221,7 +222,8 @@ int api_on(lua_State* state) {
     if (std::find(EVENTS.begin(), EVENTS.end(), event) == EVENTS.end()) {
         luaL_argerror(state, 1,
                       "unknown event (mission_load, field_update, item_granted, field_frame, frame, battle_start, "
-                      "battle_end, battle_attack, battle_attack_count, class_alignment, unit_size)");
+                      "battle_end, battle_attack, battle_attack_count, battle_status, battle_dot, battle_round_end, "
+                      "class_alignment, unit_size)");
     }
     lua_pushvalue(state, 2);
     g_handlers[event].push_back({script_index(state), luaL_ref(state, LUA_REGISTRYINDEX)});
@@ -695,6 +697,11 @@ int64_t filter(const char* event, std::initializer_list<int64_t> args, int64_t v
         return value;
     }
     return result;
+}
+
+void event(const char* event, std::initializer_list<int64_t> args) {
+    const std::vector<lua_Integer> values(args.begin(), args.end());
+    dispatch(event, values, 0, false);
 }
 
 int64_t battle_fighter(uint32_t address) {

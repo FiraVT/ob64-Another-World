@@ -8,12 +8,17 @@
 
 #include "mission_cursor.hpp"
 
+#include "input_map.hpp"
+
 #include <algorithm>
 #include <atomic>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <mutex>
+
+#include "recomp.h"
 
 namespace {
 
@@ -632,7 +637,13 @@ extern "C" void ogre_mission_cursor(uint8_t* rdram) {
     if (yielding) {
         g_yield_frames.fetch_sub(1, std::memory_order_acq_rel);
     }
-    const bool game_driving = pad_driving || centring || integrating || yielding;
+    const bool full = g_full_range.load(std::memory_order_relaxed);
+    // MODERN with the keyboard and mouse in use: the hand is the pointer's and
+    // nothing the game does moves it, so it never comes apart from the pointer
+    // (docs/anotherworld/notes-field-controls.md section 8). The pad's stick
+    // and D-pad still drive it when the pad is in use.
+    const bool mouse_owns = full && live && !ogre::pad_in_use();
+    const bool game_driving = !mouse_owns && (pad_driving || centring || integrating || yielding);
     if (game_driving) {
         g_mouse_x.store(game_x, std::memory_order_relaxed);
         g_mouse_y.store(game_y, std::memory_order_relaxed);
@@ -640,7 +651,6 @@ extern "C" void ogre_mission_cursor(uint8_t* rdram) {
         mouse_y = game_y;
     }
 
-    const bool full = g_full_range.load(std::memory_order_relaxed);
     const float x = std::min(std::max(mouse_x, full ? 0.0f : kPlayMinX), full ? 319.0f : kPlayMaxX);
     const float y = std::min(std::max(mouse_y, full ? 0.0f : kPlayMinY), full ? 239.0f : kPlayMaxY);
 
@@ -711,5 +721,220 @@ extern "C" void ogre_mission_cursor(uint8_t* rdram) {
     }
     write_f32(rdram, pointer + kCursorX, x);
     write_f32(rdram, pointer + kCursorY, y);
+}
+
+// --- The wand as the operating system's pointer ------------------------------
+//
+// `func_ovlN_801BBA40` (bank N, called once per frame at 0x801B0BF4 with the
+// cursor's pixel in $f12/$f14) draws the field cursor in its current form,
+// `*(0x801F0E08)` (-1 draws nothing: 0x801BBB2C). It uses $f12/$f14 only for
+// rectangle positions, so moving them off-screen hides the drawing and changes
+// no state. The wand form is two 16x16 TEXRECTs at the same place (display list
+// read with OGRE_DL_DECODE, 2026-11-02):
+//   1. a CI4 image with a 16-colour RGBA16 palette (LOADBLOCK, LOADTLUT),
+//      combiner colour = TEXEL0, alpha = TEXEL0 * ENV;
+//   2. two-cycle: alpha = TEXEL0 (an RGBA16 mask), colour = TEXEL1 (a 32x32
+//      RGBA16 sheen, tile window offset by SETTILESIZE, which the game moves to
+//      animate it).
+// The hooks around that call read those commands out of the display list the
+// call wrote (head at 0x800E9BA0) and compose one frame of the wand, so the
+// pointer is the game's own art from the game's own data.
+namespace {
+
+constexpr uint32_t kDlHead = 0x800E9BA0u;
+constexpr uint32_t kCursorForm = 0x801F0E08u;
+
+std::atomic<bool> g_os_hand{false};
+uint32_t g_draw_from = 0;  // game thread: the list head before the call
+int32_t g_draw_form = -1;
+float g_draw_x = 0.0f, g_draw_y = 0.0f;
+bool g_draw_hidden = false;
+int32_t g_wand_form = INT32_MIN;  // the form the wand was captured in
+
+std::mutex g_wand_mutex;
+uint32_t g_wand[256] = {};
+int g_wand_hot_x = 0, g_wand_hot_y = 0;
+uint32_t g_wand_serial = 0;
+
+uint32_t rgba16_to_abgr(uint16_t v) {
+    const uint32_t r = ((v >> 11) & 31u) * 255u / 31u;
+    const uint32_t g = ((v >> 6) & 31u) * 255u / 31u;
+    const uint32_t b = ((v >> 1) & 31u) * 255u / 31u;
+    const uint32_t a = (v & 1u) ? 255u : 0u;
+    return r | (g << 8) | (b << 16) | (a << 24);
+}
+
+struct Tile {
+    uint32_t fmt = 0, siz = 0, line = 0, tmem = 0, masks = 0, maskt = 0;
+    uint32_t uls = 0, ult = 0, lrs = 0, lrt = 0;
+};
+
+// Reads the wand out of the commands in [from, to); false when they are not
+// the two-rectangle wand.
+bool capture_wand(const uint8_t* rdram, uint32_t from, uint32_t to, float x, float y) {
+    if (from >= to || !in_ram(from, to - from) || to - from > 0x2000u) {
+        return false;
+    }
+    Tile tiles[8];
+    uint32_t timg = 0, tlut = 0;
+    uint32_t loaded[0x200] = {};  // TMEM word -> the RDRAM address loaded there
+    int rects = 0;
+    uint32_t image = 0, palette = 0, mask = 0, sheen = 0;
+    Tile sheen_tile;
+    int ulx = 0, uly = 0;
+    for (uint32_t p = from; p + 8 <= to; p += 8) {
+        const uint32_t w0 = read_u32(rdram, p);
+        const uint32_t w1 = read_u32(rdram, p + 4);
+        switch (w0 >> 24) {
+            case 0xFD:  // SETTIMG
+                timg = w1;
+                break;
+            case 0xF5: {  // SETTILE
+                Tile& t = tiles[(w1 >> 24) & 7u];
+                t.fmt = (w0 >> 21) & 7u;
+                t.siz = (w0 >> 19) & 3u;
+                t.line = (w0 >> 9) & 0x1FFu;
+                t.tmem = w0 & 0x1FFu;
+                t.maskt = (w1 >> 14) & 0xFu;
+                t.masks = (w1 >> 4) & 0xFu;
+                break;
+            }
+            case 0xF2: {  // SETTILESIZE
+                Tile& t = tiles[(w1 >> 24) & 7u];
+                t.uls = (w0 >> 12) & 0xFFFu;
+                t.ult = w0 & 0xFFFu;
+                t.lrs = (w1 >> 12) & 0xFFFu;
+                t.lrt = w1 & 0xFFFu;
+                break;
+            }
+            case 0xF3:  // LOADBLOCK
+                loaded[tiles[(w1 >> 24) & 7u].tmem] = timg;
+                break;
+            case 0xF0:  // LOADTLUT
+                tlut = timg;
+                break;
+            case 0xE4: {  // TEXRECT
+                const Tile& t0 = tiles[0];
+                const int rx = static_cast<int>((w1 >> 12) & 0xFFFu) / 4;
+                const int ry = static_cast<int>(w1 & 0xFFFu) / 4;
+                if ((t0.lrs - t0.uls) / 4 + 1 != 16 || (t0.lrt - t0.ult) / 4 + 1 != 16) {
+                    return false;
+                }
+                if (rects == 0) {
+                    if (t0.fmt != 2 || t0.siz != 0 || t0.line != 1) {
+                        return false;  // not the wand's CI4 base
+                    }
+                    image = loaded[t0.tmem];
+                    palette = tlut;
+                    ulx = rx;
+                    uly = ry;
+                }
+                else if (rects == 1) {
+                    const Tile& t1 = tiles[1];
+                    if (t0.fmt != 0 || t0.siz != 2 || t1.fmt != 0 || t1.siz != 2 || rx != ulx || ry != uly) {
+                        return false;
+                    }
+                    mask = loaded[t0.tmem];
+                    sheen = loaded[t1.tmem];
+                    sheen_tile = t1;
+                }
+                ++rects;
+                p += 8;  // the RDPHALF_1/2 words that follow carry s/t and the steps
+                break;
+            }
+            default:
+                break;
+        }
+    }
+    if (rects != 2 || !in_ram(image, 128) || !in_ram(palette, 32) || !in_ram(mask, 512) ||
+        !in_ram(sheen, 2048) || sheen_tile.masks == 0 || sheen_tile.maskt == 0) {
+        return false;
+    }
+    uint32_t out[256];
+    const uint32_t wrap_s = (1u << sheen_tile.masks) - 1u, wrap_t = (1u << sheen_tile.maskt) - 1u;
+    const uint32_t sheen_row = tiles[1].line * 8u;
+    for (uint32_t ty = 0; ty < 16; ++ty) {
+        for (uint32_t tx = 0; tx < 16; ++tx) {
+            const uint8_t pair = read_u8(rdram, image + ty * 8u + tx / 2u);
+            const uint32_t index = (tx & 1u) ? (pair & 15u) : (pair >> 4);
+            uint32_t pixel = rgba16_to_abgr(read_u16(rdram, palette + index * 2u));
+            if (read_u16(rdram, mask + ty * 32u + tx * 2u) & 1u) {
+                const uint32_t sx = (tx + sheen_tile.uls / 4u) & wrap_s;
+                const uint32_t sy = (ty + sheen_tile.ult / 4u) & wrap_t;
+                pixel = rgba16_to_abgr(read_u16(rdram, sheen + sy * sheen_row + sx * 2u)) | 0xFF000000u;
+            }
+            out[ty * 16 + tx] = pixel;
+        }
+    }
+    std::lock_guard<std::mutex> lock(g_wand_mutex);
+    // One frame of the sheen, kept until the wand's image moves (a new
+    // mission's asset). Taking every frame rebuilt the OS cursor and its hot
+    // spot each frame, which showed as jitter (maintainer, 2026-11-02).
+    static uint32_t captured_image = 0;
+    if (image != captured_image || g_wand_serial == 0) {
+        captured_image = image;
+        std::memcpy(g_wand, out, sizeof(out));
+        g_wand_hot_x = std::clamp(static_cast<int>(x) - ulx, 0, 15);
+        g_wand_hot_y = std::clamp(static_cast<int>(y) - uly, 0, 15);
+        ++g_wand_serial;
+        if (log_enabled() && g_wand_serial == 1) {
+            // The first capture as an alpha map, so a log shows the shape.
+            std::fprintf(stderr, "[missioncursor] wand captured at (%d,%d) hot=(%d,%d) image=0x%08X sheen=0x%08X\n",
+                         ulx, uly, g_wand_hot_x, g_wand_hot_y, image, sheen);
+            for (int row = 0; row < 16; ++row) {
+                char line[17];
+                for (int col = 0; col < 16; ++col) {
+                    line[col] = (out[row * 16 + col] >> 24) ? '#' : '.';
+                }
+                line[16] = '\0';
+                std::fprintf(stderr, "[missioncursor]   %s\n", line);
+            }
+            std::fflush(stderr);
+        }
+    }
+    return true;
+}
+
+}  // namespace
+
+extern "C" void ogre_mission_cursor_draw(uint8_t* rdram, recomp_context* ctx) {
+    g_draw_from = read_u32(rdram, kDlHead);
+    g_draw_form = static_cast<int32_t>(read_u32(rdram, kCursorForm));
+    g_draw_x = ctx->f12.fl;
+    g_draw_y = ctx->f14.fl;
+    // Only the wand form is replaced; the other forms (the brackets around a
+    // unit under the cursor) stay the game's.
+    g_draw_hidden = g_os_hand.load(std::memory_order_acquire) && g_full_range.load(std::memory_order_relaxed) &&
+                    g_mouse_live.load(std::memory_order_relaxed) && !ogre::pad_in_use() && g_draw_form == g_wand_form;
+    if (g_draw_hidden) {
+        ctx->f12.fl = -256.0f;
+        ctx->f14.fl = -256.0f;
+    }
+}
+
+extern "C" void ogre_mission_cursor_drawn(uint8_t* rdram) {
+    if (g_draw_hidden || g_draw_form < 0) {
+        return;
+    }
+    const uint32_t to = read_u32(rdram, kDlHead);
+    if (capture_wand(rdram, g_draw_from, to, g_draw_x, g_draw_y)) {
+        g_wand_form = g_draw_form;
+    }
+}
+
+extern "C" bool ogre_mission_cursor_wand(uint32_t* rgba, int* hot_x, int* hot_y, uint32_t* serial) {
+    std::lock_guard<std::mutex> lock(g_wand_mutex);
+    if (g_wand_serial == 0) {
+        return false;
+    }
+    std::memcpy(rgba, g_wand, sizeof(g_wand));
+    *hot_x = g_wand_hot_x;
+    *hot_y = g_wand_hot_y;
+    *serial = g_wand_serial;
+    return true;
+}
+
+extern "C" void ogre_mission_cursor_set_os_hand(bool on) {
+    g_os_hand.store(on, std::memory_order_release);
 }
 

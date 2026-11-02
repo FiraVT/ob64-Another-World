@@ -1,0 +1,55 @@
+{
+  "_comment": "Dragon breath statuses and damage over time (developer, 2026-11-02). Each elemental breath gives a status after its damage, rolled for every unit it hits; status_chance is the share of the target's hits it lands on (app/features/battle_status.cpp), and immunity still applies. Sacred Breath keeps the ROM's undead slaying on a killing blow. The same attacks are the elder dragons' front and middle rows and the Wyvern's back row. dots: at the end of each round (every unit still fighting has made one more attack) poison deals growing damage for as long as the unit stays poisoned, from any attack that poisons, and burn, Fire Breath's, deals light damage per stack and weakens the unit (app/features/battle_dot.cpp).",
+  "dots": {
+    "poison": {
+      "_comment": "Follows the poison status from any source and grows: 1x at the end of the first round, 2x, 3x, up to 5x, and poisoning a poisoned unit again adds a step. A tick is 30% of the game's damage for the attack that poisoned, or for Acid Vapor (71, the earth spell) when that attack deals none, as the poison spells do. Visual 8 is the game's poison effect.",
+      "status": "poison",
+      "power": 30,
+      "max_stacks": 5,
+      "stacks_on_hit": 1,
+      "stacks_per_tick": 1,
+      "tick": "round",
+      "attack": 71,
+      "visual": 8
+    },
+    "burn": {
+      "_comment": "Light, steady damage at the end of each round: 10% of a Fire Breath per stack. Each Fire Breath that lands adds a stack, up to 3, and each stack lowers the burning unit's damage by 10%. Visual 10 is the game's Power Down effect and label, for the damage it lowers, and the port draws art/burning.png (BURNING) beside it (developer, 2026-11-02).",
+      "power": 10,
+      "max_stacks": 3,
+      "stacks_on_hit": 1,
+      "tick": "round",
+      "damage_down": 10,
+      "visual": 10,
+      "label": "BURNING",
+      "label_color": "#FF8A2A",
+      "label_image": "art/burning.png"
+    }
+  },
+  "attacks": {
+    "32": {
+      "_name": "Lightning Breath",
+      "status": "paralysis",
+      "status_chance": 25
+    },
+    "33": {
+      "_name": "Fire Breath",
+      "dot": "burn",
+      "dot_chance": 50
+    },
+    "34": {
+      "_name": "Acid Breath",
+      "status": "power_down",
+      "status_chance": 75
+    },
+    "35": {
+      "_name": "Breath of Cold",
+      "status": "sleep",
+      "status_chance": 25
+    },
+    "37": {
+      "_name": "Rotten Breath",
+      "status": "poison",
+      "status_chance": 75
+    }
+  }
+}

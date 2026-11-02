@@ -1599,13 +1599,19 @@ std::vector<Panel::Row> Panel::build_rows(Tab tab) const {
             append_choices(rows, "CONTROLS", "MOUSE");
             rows.push_back(Row{RowKind::Section, "GAMEPAD", 0, 0, -1});
             append_choices(rows, "CONTROLS", "GAMEPAD");
+            rows.push_back(Row{RowKind::Section, "CAMERA", 0, 0, -1});
+            append_choices(rows, "CONTROLS", "CAMERA");
             rows.push_back(Row{RowKind::Section, "ACTIONS: KEYBOARD AND GAMEPAD", 0, 0, -1});
             for (int i = 0; i < kN64ButtonCount; i++) {
                 rows.push_back(Row{RowKind::Binding, {}, 0, 0, i});
             }
             rows.push_back(Row{RowKind::ResetBindings, {}, 0, 0, -1});
             rows.push_back(Row{RowKind::Section, "LEFT STICK: MOVE THE CURSOR (ANALOG)", 0, 0, -1});
-            rows.push_back(Row{RowKind::Section, "RIGHT STICK: CAMERA UP/DOWN, LEFT FOR THE OVERVIEW MAP", 0, 0, -1});
+            rows.push_back(Row{RowKind::Section, "RIGHT STICK: CAMERA UP/DOWN, LEFT FOR THE OVERVIEW MAP; HOLD LT: ZOOM", 0, 0, -1});
+            rows.push_back(Row{RowKind::Section,
+                               "MODERN FIELD: RIGHT STICK PANS THE CAMERA; HOLD LT: RIGHT STICK ZOOMS, D-PAD IS C-UP/DOWN/LEFT/RIGHT; "
+                               "CURSOR KEYS PAN THE CAMERA",
+                               0, 0, -1});
             // The panel's own pad controls. They are not bindings: they act on
             // the panel, and the game does not see the pad while the overlay is
             // open. The SELECT button opens and closes the overlay only while no

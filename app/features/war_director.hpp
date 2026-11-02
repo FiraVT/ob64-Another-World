@@ -116,6 +116,11 @@ bool elite_class(const uint8_t* rdram, int cls, int level);
 // The DIFFICULTY level: 0 EASY, 1 NORMAL, 2 HARD, 3 VETERAN.
 int difficulty_level();
 
+// How many members the boss unit gains on `mission` (developer, 2026-11-02):
+// EASY 1; NORMAL 1 on missions 1..10, then 1 or 2; HARD and VETERAN 1..4. The
+// count is fixed per war and mission (the war seed), so a reload keeps it.
+int boss_additions(int mission);
+
 // Elite members a unit may hold at this point (record members and battle
 // extras together): the difficulty's cap, and on VETERAN two more after 90
 // in-game days on the mission and two more after 180.

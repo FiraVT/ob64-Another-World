@@ -29,6 +29,11 @@
 //   mission_load, field_update, field_frame, frame
 //   item_granted(item)              the item word (bit 15 set: equipment id,
 //                                   else consumable id); may return another
+//   battle_round_end(round)         at the end of each round of a fight (every
+//                                   fighter still in it has made `round`
+//                                   attacks or has none left), after the
+//                                   round's damage over time ticks; on the game
+//                                   thread, inside the battle's compute pass
 //   battle_start(unit), battle_end(unit)
 //                                   the player's unit in the battle (0..29),
 //                                   or -1; on the main thread
@@ -37,6 +42,15 @@
 // value; out-of-range returns are ignored (filter below):
 //   battle_attack(fighter, attack)  the attack a participant makes (0..158)
 //   battle_attack_count(fighter, n) a participant's attacks this fight (0..15)
+//   battle_status(fighter, target, attack, status)
+//                                   a status landing on a target after the hit
+//                                   of an attack with a status
+//                                   (battle_status.cpp): 0 stops it, or another
+//                                   status (content_db.hpp valid_attack_status)
+//   battle_dot(target, fighter, attack, stacks, damage)
+//                                   a damage over time tick on a target
+//                                   (battle_dot.cpp): the damage, 0..9999;
+//                                   0 skips the tick
 //   class_alignment(limit)          a class change's alignment limit byte;
 //                                   255 skips the test
 //   unit_size(size)                 the places a class of this size (1 or 2)
@@ -82,6 +96,8 @@ constexpr bool valid_fighter(int64_t n) {
 // `value`. Returns the last handler's integer result, or `value` when no
 // handler returns one or the result is outside [low, high].
 int64_t filter(const char* event, std::initializer_list<int64_t> args, int64_t value, int64_t low, int64_t high);
+// Runs an event's handlers with `args`; their returns are ignored.
+void event(const char* event, std::initializer_list<int64_t> args);
 
 // The participant index (0..19) of a battle participant's guest address, or
 // -1.

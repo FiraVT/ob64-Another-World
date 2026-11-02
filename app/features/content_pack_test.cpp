@@ -16,6 +16,7 @@
 #include <fstream>
 #include <functional>
 #include <iterator>
+#include <optional>
 #include <span>
 #include <string>
 #include <vector>
@@ -172,6 +173,79 @@ std::vector<Case> cases() {
          R"({"classes":{"test-mod.dragon-knight":{"copy_of":200}}})", false},
         {"a new class key in a table not indexed by class", R"({"items":{"test-mod.sword":{"price":1}}})", false},
         {"a malformed class key", R"({"classes":{"Bad Key!":{"copy_of":34}}})", false},
+        {"an attack status by name is read",
+         R"({"attacks":{"37":{"status":"poison","status_rule":"half_hit","status_chance":75}}})", true},
+        {"an attack status by id is read", R"({"attacks":{"35":{"status":4,"status_rule":11}}})", true},
+        {"an attack status of none is read", R"({"attacks":{"36":{"status":"none"}}})", true},
+        {"an attack status the game does not have", R"({"attacks":{"37":{"status":"charm"}}})", false},
+        {"an attack status id the game does not have", R"({"attacks":{"37":{"status":16}}})", false},
+        {"an attack status past a byte", R"({"attacks":{"37":{"status":266}}})", false},
+        {"a status rule the game does not have", R"({"attacks":{"37":{"status_rule":3}}})", false},
+        {"a status chance over 100", R"({"attacks":{"37":{"status_chance":101}}})", false},
+        {"a negative status chance", R"({"attacks":{"37":{"status_chance":-1}}})", false},
+        {"a status chance that is not a whole number", R"({"attacks":{"37":{"status_chance":"75"}}})", false},
+        {"a status on a table without attacks", R"({"items":{"1":{"status":"poison"}}})", false},
+        {"a damage over time section is read",
+         R"({"dots":{"poison":{"status":"poison","power":20,"tick":"turn","attack":71},"burn":{"power":20,"max_stacks":3,"tick":"round"}}})",
+         true},
+        {"an attack's damage over time is read", R"({"attacks":{"33":{"dot":"burn","dot_chance":50}}})", true},
+        {"dots that is not an object", R"({"dots":[1]})", false},
+        {"a damage over time name with a capital", R"({"dots":{"Poison":{"power":20}}})", false},
+        {"a damage over time name of 33 characters", R"({"dots":{")" + std::string(33, 'a') + R"(":{"power":20}}})", false},
+        {"a damage over time power of 0", R"({"dots":{"burn":{"power":0}}})", false},
+        {"a damage over time power over 100", R"({"dots":{"burn":{"power":101}}})", false},
+        {"a damage over time with 10 stacks", R"({"dots":{"burn":{"max_stacks":10}}})", false},
+        {"a damage over time tick the port does not have", R"({"dots":{"burn":{"tick":"frame"}}})", false},
+        {"a damage over time on a status the fighter does not keep", R"({"dots":{"x":{"status":"power_down"}}})", false},
+        {"a damage over time attack past the table", R"({"dots":{"x":{"attack":159}}})", false},
+        {"a damage over time setting the port does not know", R"({"dots":{"x":{"element":2}}})", false},
+        {"33 damage over time effects", [] {
+             std::string text = R"({"dots":{)";
+             for (int i = 0; i < 33; i++) {
+                 text += (i ? "," : "") + std::string("\"d") + std::to_string(i) + R"(":{})";
+             }
+             return text + "}}";
+         }(),
+         false},
+        {"a damage over time growing 10 stacks a tick", R"({"dots":{"x":{"stacks_per_tick":10}}})", false},
+        {"a damage over time adding -1 stacks on a hit", R"({"dots":{"x":{"stacks_on_hit":-1}}})", false},
+        {"a damage down over 100", R"({"dots":{"x":{"damage_down":101}}})", false},
+        {"a damage over time visual past a byte", R"({"dots":{"x":{"visual":256}}})", false},
+        {"a damage over time label is read",
+         R"({"dots":{"burn":{"label":"BURNING","label_color":"#FF8A2A","label_image":"art/burning.png"}}})", true},
+        {"a label with markup", R"({"dots":{"burn":{"label":"<b>X</b>"}}})", false},
+        {"a label of 17 characters", R"({"dots":{"burn":{"label":"ABCDEFGHIJKLMNOPQ"}}})", false},
+        {"an empty label", R"({"dots":{"burn":{"label":""}}})", false},
+        {"a label color without #", R"({"dots":{"burn":{"label_color":"FF8A2A"}}})", false},
+        {"a label color that is not hex", R"({"dots":{"burn":{"label_color":"#GG0000"}}})", false},
+        {"a label image that climbs out of the pack", R"({"dots":{"burn":{"label_image":"../../saves/x.png"}}})", false},
+        {"a label image from the root", R"({"dots":{"burn":{"label_image":"C:/x.png"}}})", false},
+        {"a label image that is not a PNG", R"({"dots":{"burn":{"label_image":"art/burning.exe"}}})", false},
+        {"a damage over time tint past a byte", R"({"dots":{"x":{"tint":256}}})", false},
+        {"a damage over time tint below 0", R"({"dots":{"x":{"tint":-1}}})", false},
+        {"a damage over time visual value past 16 bits", R"({"dots":{"x":{"visual_value":65536}}})", false},
+        {"an attack dot that is not a name", R"({"attacks":{"33":{"dot":"../burn"}}})", false},
+        {"an attack dot chance over 100", R"({"attacks":{"33":{"dot":"burn","dot_chance":101}}})", false},
+        {"a dot on a table without attacks", R"({"items":{"1":{"dot":"burn"}}})", false},
+        {"a story unit list", R"({"story_units":[{"mission":1,"slot":31,"_note":"Wizard"},{"mission":3,"slot":59}]})",
+         true},
+        {"story units that are not an array", R"({"story_units":{"mission":1,"slot":31}})", false},
+        {"a story unit that is the boss", R"({"story_units":[{"mission":1,"slot":30}]})", false},
+        {"a story unit past the enemy slots", R"({"story_units":[{"mission":1,"slot":60}]})", false},
+        {"a story unit on mission 64", R"({"story_units":[{"mission":64,"slot":31}]})", false},
+        {"a story unit without a slot", R"({"story_units":[{"mission":1}]})", false},
+        {"a story unit slot that is text", R"({"story_units":[{"mission":1,"slot":"31"}]})", false},
+        {"a story unit setting the port does not know", R"({"story_units":[{"mission":1,"slot":31,"class":5}]})",
+         false},
+        {"257 story units",
+         [] {
+             std::string text = R"({"story_units":[)";
+             for (int i = 0; i < 257; i++) {
+                 text += std::string(i ? "," : "") + R"({"mission":1,"slot":31})";
+             }
+             return text + "]}";
+         }(),
+         false},
         {"a LordlyCaliber project with a version of the wrong type",
          R"({"format":"LordlyCaliberProject","version":"x"})", false},
         // The record and name sections of the wrong type need the ROM's
@@ -691,6 +765,90 @@ int run_lordlycaliber_keys() {
     return failed;
 }
 
+// LordlyCaliber's "attacks" section (content_json.cpp
+// read_lordlycaliber_attacks) on a synthetic ROM: zeros, the revision 1 check
+// word (class 1's name pointer) and the five spell rows as the ROM holds them
+// (game_addresses.hpp kSpellMaps). Runs last: after it the database is loaded.
+// The settings a "dots" section and an attack's "dot" give (content_json.cpp
+// read_dots, read_attack_dot).
+int run_dots() {
+    std::string error;
+    const std::optional<Pack> pack = parse_pack(
+        R"({"dots":{"poison":{"status":"poison","power":15,"attack":71,"tick":"turn","stacks_on_hit":0,"stacks_per_tick":1},)"
+        R"("burn":{"max_stacks":3,"damage_down":10,"visual":14,"visual_value":63}},)"
+        R"("attacks":{"33":{"dot":"burn","dot_chance":50}}})",
+        "test", error);
+    bool pass = pack.has_value() && pack->dots.size() == 2 && pack->edits.empty();
+    if (pass) {
+        const auto find = [&](const char* name) {
+            return *std::find_if(pack->dots.begin(), pack->dots.end(), [&](const Dot& d) { return d.name == name; });
+        };
+        const Dot poison = find("poison");
+        const Dot burn = find("burn");
+        pass = poison.status == 10 && poison.power == 15 && poison.attack == 71 && poison.max_stacks == 1 &&
+               !poison.round && poison.stacks_on_hit == 0 && poison.stacks_per_tick == 1 && burn.status == 0 &&
+               burn.power == 20 && burn.max_stacks == 3 && burn.round && burn.stacks_on_hit == 1 &&
+               burn.stacks_per_tick == 0 && burn.damage_down == 10 && burn.visual == 14 && burn.visual_value == 63 &&
+               pack->attack_dots.size() == 1 && pack->attack_dots.at(33).dot == "burn" &&
+               pack->attack_dots.at(33).chance == 50;
+    }
+    std::printf("%s  a dots section and an attack dot give their settings%s%s\n", pass ? "pass" : "FAIL",
+                error.empty() ? "" : ": ", error.c_str());
+    return pass ? 0 : 1;
+}
+
+// A "story_units" section gives its units, and the port's own list keeps
+// Tenne Plains' talking Wizard (content_db.cpp story_unit).
+int run_story_units() {
+    std::string error;
+    const std::optional<Pack> pack =
+        parse_pack(R"({"story_units":[{"mission":1,"slot":31},{"mission":12,"slot":45}]})", "test", error);
+    const bool pass = pack.has_value() && pack->story_units.size() == 2 && pack->story_units[1].mission == 12 &&
+                      pack->story_units[1].slot == 45 && pack->edits.empty() && ogre::content::story_unit(1, 31) &&
+                      !ogre::content::story_unit(1, 32);
+    std::printf("%s  a story_units section gives its units; Tenne Plains slot 31 is a story unit%s%s\n",
+                pass ? "pass" : "FAIL", error.empty() ? "" : ": ", error.c_str());
+    return pass ? 0 : 1;
+}
+
+// The bytes an attack "status" writes (content_json.cpp read_attack_status).
+int run_attack_status() {
+    struct Want {
+        const char* name;
+        const char* text;
+        std::vector<std::pair<uint16_t, std::vector<uint8_t>>> bytes;  // (offset, bytes) in order
+        int chance;                                                     // -1: none
+    };
+    const Want wants[] = {
+        {"a status writes the after-hit rule and on_hit", R"({"attacks":{"37":{"status":"poison"}}})",
+         {{0x0A, {0x08, 0x0A}}, {0x0D, {0x05}}}, -1},
+        {"a status with its rule keeps the rule", R"({"attacks":{"35":{"status":"sleep","status_rule":"quarter_hit"}}})",
+         {{0x0A, {0x08, 0x04}}, {0x0D, {0x0B}}}, -1},
+        {"a status chance is kept by the pack", R"({"attacks":{"33":{"status":"power_down","status_chance":50}}})",
+         {{0x0A, {0x08, 0x06}}, {0x0D, {0x05}}}, 50},
+        {"a status of none clears the three bytes", R"({"attacks":{"36":{"status":"none"}}})",
+         {{0x0A, {0xFF, 0xFF}}, {0x0D, {0xFF}}}, -1},
+    };
+    int failed = 0;
+    for (const Want& w : wants) {
+        std::string error;
+        const std::optional<Pack> pack = parse_pack(w.text, "test", error);
+        bool pass = pack.has_value() && pack->edits.size() == w.bytes.size();
+        for (size_t i = 0; pass && i < w.bytes.size(); i++) {
+            const Edit& e = pack->edits[i];
+            pass = e.table == Table::Attacks && e.offset == w.bytes[i].first && e.bytes == w.bytes[i].second;
+        }
+        if (pass) {
+            const auto found = pack->status_chances.begin();
+            pass = w.chance < 0 ? pack->status_chances.empty()
+                                : pack->status_chances.size() == 1 && found->second == w.chance;
+        }
+        failed += pass ? 0 : 1;
+        std::printf("%s  %s%s%s\n", pass ? "pass" : "FAIL", w.name, error.empty() ? "" : ": ", error.c_str());
+    }
+    return failed;
+}
+
 std::filesystem::path class_ids_file() {
     return ogre::host::pref_dir() / "saves" / "class-ids.json";
 }
@@ -885,10 +1043,6 @@ int run_keep_one() {
     return failed;
 }
 
-// LordlyCaliber's "attacks" section (content_json.cpp
-// read_lordlycaliber_attacks) on a synthetic ROM: zeros, the revision 1 check
-// word (class 1's name pointer) and the five spell rows as the ROM holds them
-// (game_addresses.hpp kSpellMaps), which load_synthetic_rom loads.
 int run_lordlycaliber_attacks() {
     // Entries from attack 1; `at` puts an entry at an attack id, the rest are
     // the synthetic ROM's records (12 zero bytes).
@@ -1016,6 +1170,9 @@ int main(int argc, char** argv) {
         failed += run_examples(argv[1]);
     }
     failed += run_lordlycaliber_keys();
+    failed += run_attack_status();
+    failed += run_dots();
+    failed += run_story_units();
     // game.recruit's own checks (recruit.hpp; security.md section 3.1).
     struct Recruit {
         const char* name;
@@ -1061,6 +1218,14 @@ int main(int argc, char** argv) {
         {"fighter 19", ogre::lua::valid_fighter, 19, true},
         {"fighter 20 (past the participants)", ogre::lua::valid_fighter, 20, false},
         {"fighter -1", ogre::lua::valid_fighter, -1, false},
+        {"battle_status poison (10)", ogre::content::valid_attack_status, 10, true},
+        {"battle_status none (0)", ogre::content::valid_attack_status, 0, true},
+        {"battle_status 9 (no status of the game)", ogre::content::valid_attack_status, 9, false},
+        {"battle_status 16 (death, no game rule)", ogre::content::valid_attack_status, 16, false},
+        {"battle_status -1", ogre::content::valid_attack_status, -1, false},
+        {"a damage over time on poison (10)", ogre::content::valid_dot_status, 10, true},
+        {"a damage over time on power down (6, not a fighter flag)", ogre::content::valid_dot_status, 6, false},
+        {"a damage over time on no status (0)", ogre::content::valid_dot_status, 0, false},
     };
     for (const Range& r : ranges) {
         const bool pass = r.check(r.value) == r.accept;

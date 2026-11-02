@@ -75,8 +75,12 @@ bool enabled() {
 
 using Request = std::tuple<uint32_t, uint32_t, uint32_t, uint32_t, uint32_t>;
 
-// Requests already tried in the current cache, so a figure that cannot load is
-// tried and logged once, not every frame. A new battle allocates a new cache.
+// Requests already tried in the current fight, so a figure that cannot load is
+// tried and logged once, not every frame. A new battle allocates a new cache,
+// but it can land at the last one's address, so new_fight also clears the
+// list: with only the address test, a fight whose cache took the last fight's
+// address skipped every figure that fight had loaded (played, 2026-11-02:
+// classes 63, 64, 65 "not loaded" in the third fight, 67 loaded).
 uint32_t g_cache = 0;
 std::set<Request> g_tried;
 
@@ -97,6 +101,10 @@ uint32_t figure_handle(uint8_t* rdram, recomp_context* ctx, uint32_t cls, uint32
 }  // namespace
 
 namespace ogre::battle_figures {
+
+void new_fight() {
+    g_tried.clear();
+}
 
 int ensure(uint8_t* rdram, recomp_context* ctx, uint32_t cls, uint32_t key, uint32_t side, uint32_t alt,
            uint32_t variant, uint32_t handle) {

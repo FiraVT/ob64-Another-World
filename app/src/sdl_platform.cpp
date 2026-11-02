@@ -13,6 +13,7 @@
 #include "input_map.hpp"
 #include "map_cursor.hpp"
 #include "mission_cursor.hpp"
+#include "camera_zoom.hpp"
 #ifdef OGRE_HAVE_RMLUI
 #include "field_select.hpp"
 #endif
@@ -675,6 +676,61 @@ void open_audio(Platform& platform, uint32_t frequency) {
 // `off`/`false`/`no` for 0). The game window's close path and the crash report
 // leave the state alone, so a process that exits while the pointer is hidden
 // restores it here first.
+// The MODERN field's pointer: with the keyboard and mouse in use, the operating
+// system pointer becomes the game's own wand (mission_cursor.cpp copies it out
+// of the game's display list), scaled by whole pixels to the game's size, and
+// the game stops drawing its wand, which trailed the mouse by a frame or two at
+// the field's frame rate (docs/anotherworld/notes-field-controls.md).
+static void set_wand_cursor(SDL_Window* window, bool want) {
+    static SDL_Cursor* cursor = nullptr;
+    static uint32_t made_serial = 0;
+    static int made_scale = 0;
+    static bool active = false;
+    uint32_t rgba[256];
+    int hot_x = 0, hot_y = 0;
+    uint32_t serial = 0;
+    if (want && window != nullptr && ogre_mission_cursor_wand(rgba, &hot_x, &hot_y, &serial)) {
+        int draw_w = 0, draw_h = 0;
+        SDL_GL_GetDrawableSize(window, &draw_w, &draw_h);
+        const int scale = std::max(1, std::min(draw_w / 320, draw_h / 240));
+        if (cursor == nullptr || serial != made_serial || scale != made_scale) {
+            const int size = 16 * scale;
+            SDL_Surface* surface = SDL_CreateRGBSurfaceWithFormat(0, size, size, 32, SDL_PIXELFORMAT_RGBA32);
+            if (surface != nullptr) {
+                for (int y = 0; y < size; y++) {
+                    auto* row = reinterpret_cast<uint32_t*>(static_cast<uint8_t*>(surface->pixels) + y * surface->pitch);
+                    for (int x = 0; x < size; x++) {
+                        row[x] = rgba[(y / scale) * 16 + x / scale];
+                    }
+                }
+                SDL_Cursor* made = SDL_CreateColorCursor(surface, hot_x * scale, hot_y * scale);
+                SDL_FreeSurface(surface);
+                if (made != nullptr) {
+                    SDL_SetCursor(made);
+                    if (cursor != nullptr) {
+                        SDL_FreeCursor(cursor);
+                    }
+                    cursor = made;
+                    made_serial = serial;
+                    made_scale = scale;
+                    active = true;
+                }
+            }
+        }
+        else if (!active) {
+            SDL_SetCursor(cursor);
+            active = true;
+        }
+        ogre_mission_cursor_set_os_hand(active);
+        return;
+    }
+    if (active) {
+        SDL_SetCursor(SDL_GetDefaultCursor());
+        active = false;
+    }
+    ogre_mission_cursor_set_os_hand(false);
+}
+
 void set_game_cursor_hidden(bool hidden, const char* why) {
     static bool current = false;
     static const int forced = [] {
@@ -778,6 +834,26 @@ static bool panel_owns_mouse() {
     }
 #endif
     return overlay_visible();
+}
+
+// The pointer as a pixel of the 320x240 picture, aspect-fit and centred in the
+// drawable (the mapping map_cursor.cpp and field_select.cpp use). Not clamped:
+// on a widescreen field the pixel may lie left of 0 or right of 320.
+static void pointer_framebuffer(SDL_Window* window, float& fx, float& fy) {
+    int wx = 0, wy = 0, win_w = 0, win_h = 0, draw_w = 0, draw_h = 0;
+    SDL_GetMouseState(&wx, &wy);
+    SDL_GetWindowSize(window, &win_w, &win_h);
+    SDL_GL_GetDrawableSize(window, &draw_w, &draw_h);
+    fx = 160.0f;
+    fy = 120.0f;
+    if (win_w <= 0 || win_h <= 0 || draw_w <= 0 || draw_h <= 0) {
+        return;
+    }
+    const float px = wx * static_cast<float>(draw_w) / win_w;
+    const float py = wy * static_cast<float>(draw_h) / win_h;
+    const float scale = std::min(draw_w / 320.0f, draw_h / 240.0f);
+    fx = (px - (draw_w - 320.0f * scale) * 0.5f) / scale;
+    fy = (py - (draw_h - 240.0f * scale) * 0.5f) / scale;
 }
 
 static void handle_menu_mouse(const SDL_Event& event, Uint32 game_window) {
@@ -887,6 +963,11 @@ void pump_sdl_events(Platform& platform, bool* quit) {
 
 #ifdef OGRE_HAVE_RMLUI
     ogre_mission_cursor_set_full_range(ogre::field_select::owns_field());
+    // The wand as the pointer: MODERN open field, keyboard and mouse in use,
+    // the pointer over the game window and no port panel under it.
+    set_wand_cursor(platform.window, platform.window != nullptr && SDL_GetMouseFocus() == platform.window &&
+                                         ogre::field_select::modern_field() && !ogre::pad_in_use() &&
+                                         !panel_owns_mouse() && !overlay_visible());
 #endif
     // KEEP POINTER IN WINDOW (settings.hpp -> Choice::ConfinePointer): while the
     // game window has input focus and the Esc menu is closed, the pointer cannot
@@ -1191,6 +1272,18 @@ void pump_sdl_events(Platform& platform, bool* quit) {
 #else
             const bool field_owns = false;
 #endif
+            // CAMERA ZOOM: the wheel zooms the mission field and the world map
+            // while either is up with no menu open (camera_zoom.cpp); otherwise
+            // it goes on to press the D-pad as before.
+            if (event.type == SDL_MOUSEWHEEL && event.wheel.windowID == game_window && event.wheel.y != 0 &&
+                !panel_owns_mouse()) {
+                float fx = 0.0f;
+                float fy = 0.0f;
+                pointer_framebuffer(platform.window, fx, fy);
+                if (ogre::camera_zoom::wheel(event.wheel.y, fx, fy)) {
+                    continue;
+                }
+            }
             handle_menu_mouse(event, game_window);
             // The game's cursors follow the pointer, MODERN field included: there
             // the overlay keeps the clicks, and the field's own cursor (the hand)
@@ -1429,6 +1522,10 @@ static uint16_t keyboard_buttons() {
     // player clears contributes nothing. The synthetic press of a scripted run
     // is OR'd on top.
     uint16_t buttons = keyboard_buttons_from_map(read_input_map());
+#ifdef OGRE_HAVE_RMLUI
+    // On the MODERN open field the cursor keys pan the camera (field_select.cpp).
+    buttons = ogre::field_select::keyboard_pan(buttons);
+#endif
     buttons |= automation_buttons();
     return buttons;
 }
@@ -1474,11 +1571,33 @@ static uint16_t gamecontroller_buttons(SDL_GameController* controller) {
 #endif
     uint16_t buttons = gamecontroller_buttons_from_map(read_input_map(), controller, claimed);
 
+    // CAMERA ZOOM (camera_zoom.cpp): on the mission field and the world map,
+    // the right stick's up/down zooms while the left trigger is held, and then
+    // presses neither C-UP nor C-DOWN.
+    const bool zooming = ogre::camera_zoom::pad(
+        SDL_GameControllerGetAxis(controller, SDL_CONTROLLER_AXIS_TRIGGERLEFT) / 32767.0f,
+        SDL_GameControllerGetAxis(controller, SDL_CONTROLLER_AXIS_RIGHTY) / 32767.0f);
+    if (zooming) {
+        buttons &= static_cast<uint16_t>(~(N64_BTN_C_UP | N64_BTN_C_DOWN));
+    }
+
+#ifdef OGRE_HAVE_RMLUI
+    // On the MODERN open field the right stick pans the camera and LT + D-pad
+    // presses the C buttons (field_select.cpp), so the C layer below is off.
+    if (ogre::field_select::modern_field()) {
+        return ogre::field_select::pad_camera_buttons(
+            buttons, SDL_GameControllerGetAxis(controller, SDL_CONTROLLER_AXIS_TRIGGERLEFT) / 32767.0f,
+            SDL_GameControllerGetAxis(controller, SDL_CONTROLLER_AXIS_RIGHTX) / 32767.0f,
+            SDL_GameControllerGetAxis(controller, SDL_CONTROLLER_AXIS_RIGHTY) / 32767.0f);
+    }
+    ogre::field_select::pad_camera_buttons(0, 0.0f, 0.0f, 0.0f);
+#endif
+
     // The right stick is a fixed extra layer for the C buttons, in addition to
     // whatever the map binds to them. C-LEFT and C-RIGHT have no default pad
     // button, so without this they would be unreachable on a pad.
-    if (SDL_GameControllerGetAxis(controller, SDL_CONTROLLER_AXIS_RIGHTY) < -8000) buttons |= N64_BTN_C_UP;
-    if (SDL_GameControllerGetAxis(controller, SDL_CONTROLLER_AXIS_RIGHTY) > 8000) buttons |= N64_BTN_C_DOWN;
+    if (!zooming && SDL_GameControllerGetAxis(controller, SDL_CONTROLLER_AXIS_RIGHTY) < -8000) buttons |= N64_BTN_C_UP;
+    if (!zooming && SDL_GameControllerGetAxis(controller, SDL_CONTROLLER_AXIS_RIGHTY) > 8000) buttons |= N64_BTN_C_DOWN;
     if (SDL_GameControllerGetAxis(controller, SDL_CONTROLLER_AXIS_RIGHTX) < -8000) buttons |= N64_BTN_C_LEFT;
     if (SDL_GameControllerGetAxis(controller, SDL_CONTROLLER_AXIS_RIGHTX) > 8000) buttons |= N64_BTN_C_RIGHT;
 
@@ -2520,6 +2639,10 @@ static bool get_input(int controller_num, uint16_t* buttons, float* x, float* y)
         if (ogre::choice_on(ogre::Choice::StickY)) {
             *y = -*y;
         }
+#ifdef OGRE_HAVE_RMLUI
+        // The MODERN open field's response curve: slow, precise small pushes.
+        ogre::field_select::shape_stick(*x, *y);
+#endif
         connected = true;
     }
 

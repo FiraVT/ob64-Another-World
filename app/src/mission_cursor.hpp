@@ -122,6 +122,16 @@ extern "C" uint16_t ogre_mission_cursor_edge_direction();
 // push is off (the overlay pans the camera itself). Platform thread, every pump.
 extern "C" void ogre_mission_cursor_set_full_range(bool on);
 
+// The wand as the operating system's pointer (MODERN, keyboard and mouse;
+// docs/anotherworld/notes-field-controls.md section 9). The game thread copies
+// the wand's two layers out of the display list each frame the game draws it;
+// `ogre_mission_cursor_wand` hands the latest 16x16 RGBA image (0xAABBGGRR per
+// pixel, row-major), its hot spot and a serial that changes with the image.
+// The platform sets `ogre_mission_cursor_set_os_hand(true)` while that image is
+// the pointer, and the game's own wand is then drawn off-screen.
+extern "C" bool ogre_mission_cursor_wand(uint32_t* rgba, int* hot_x, int* hot_y, uint32_t* serial);
+extern "C" void ogre_mission_cursor_set_os_hand(bool on);
+
 // Environment:
 //   OGRE_MISSION_CURSOR=1 / =0             force this screen's pointer control
 //                                          on / off for one run; unset follows

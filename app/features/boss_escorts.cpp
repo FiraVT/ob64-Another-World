@@ -18,7 +18,9 @@
 //
 // Who gets extras (developer, 2026-10-30):
 //
-//   boss (slot 30)  1, 2 from mission 15 (any difficulty but EASY's rule below)
+//   boss (slot 30)  war_director::boss_additions (developer, 2026-11-02):
+//                   EASY 1; NORMAL 1 on missions 1..10, then 1 or 2; HARD and
+//                   VETERAN 1..4. The rules below are for the other units.
 //   EASY            none for other units
 //   NORMAL          1 weak extra (a base-tier class of the family, 3 levels
 //                   lower) from mission 25, on about half the full units
@@ -29,7 +31,8 @@
 //                   after 180)
 //
 // Only full units (five record members) get extras, except the boss. Story
-// units (a leader of a story class other than the army classes) never do.
+// units (a leader of a story class other than the army classes, or a unit in
+// content::story_unit's list) never do.
 // Classes come from war_director::themed_extra_class (flyers stay flyers,
 // otherwise the escort's family, a missing role first) and are built with the
 // game's own character builder func_ovlR_802150DC on the field update (game
@@ -57,6 +60,7 @@
 
 #include "game_addresses.hpp"
 #include "boss_escorts.hpp"
+#include "content_db.hpp"
 #include "feature_flags.hpp"
 #include "game_events.hpp"
 #include "librecomp/overlays.hpp"
@@ -268,8 +272,8 @@ int extras_wanted(int slot, int members, int mission, double hours, int level, i
     strength = level >= 3 ? 2 : level == 2 ? 1 : 0;
     int want = 0;
     if (slot == BOSS) {
-        want = mission >= 15 ? 2 : 1;
         strength = std::max(strength, 1);
+        return std::min(ogre::war_director::boss_additions(mission), MAX_EXTRA);
     }
     if (members >= 5) {
         switch (level) {
@@ -343,7 +347,7 @@ void field_step(uint8_t* rdram, recomp_context* ctx) {
         u.made = true;
         u.leader_ref = leader_ref;
         const int leader_cls = leader_ref > 0 && leader_ref < 100 ? rd8(rdram, char_of(leader_ref) + 0x11) : 0;
-        if (slot != BOSS && !generic_class(leader_cls)) {
+        if (slot != BOSS && (!generic_class(leader_cls) || ogre::content::story_unit(mission, slot))) {
             continue;  // a story unit
         }
         int members = 0;

@@ -47,6 +47,7 @@
 #include "organize_view.hpp"
 #include "options_view.hpp"
 #include "alerts_view.hpp"
+#include "battle_labels.hpp"
 #include "field_view.hpp"
 #include "portraits.hpp"
 
@@ -452,11 +453,21 @@ Rml::TextureHandle RenderInterfaceRT64::LoadTexture(Rml::Vector2i& dimensions, c
         dimensions = Rml::Vector2i(portraits::WIDTH, portraits::HEIGHT);
         return reinterpret_cast<Rml::TextureHandle>(make_texture(rgba.data(), portraits::WIDTH, portraits::HEIGHT));
     }
+    // `pixel:<path>`: pixel art (a mod's battle label, battle_labels.cpp),
+    // enlarged 8x with nearest sampling so the element's scaling stays crisp;
+    // the file is read as below.
+    int enlarge = 1;
+    Rml::String file = source;
+    if (const size_t pixel_at = source.find("pixel:"); pixel_at != Rml::String::npos) {
+        enlarge = 8;
+        file = source.substr(pixel_at + 6);
+    }
     // A PNG file named by the port's own documents in ui/ (the MODS tab's
-    // icons). Mods do not write these documents. Other formats and files over
-    // 4 MiB are refused.
+    // icons) or a mod's label image (a path inside its pack's folder,
+    // content_db.hpp Dot::label_image). Other formats and files over 4 MiB
+    // are refused.
     std::error_code ec;
-    const std::filesystem::path path = std::filesystem::u8path(source);
+    const std::filesystem::path path = std::filesystem::u8path(file);
     if (path.extension() != ".png" || !std::filesystem::is_regular_file(path, ec) ||
         std::filesystem::file_size(path, ec) > 4u * 1024u * 1024u) {
         Rml::Log::Message(Rml::Log::LT_WARNING, "rml_ui: only PNG files up to 4 MiB load (%s)", source.c_str());
@@ -478,6 +489,18 @@ Rml::TextureHandle RenderInterfaceRT64::LoadTexture(Rml::Vector2i& dimensions, c
         for (int c = 0; c < 3; c++) {
             rgba[i + c] = static_cast<uint8_t>((rgba[i + c] * rgba[i + 3] + 127) / 255);
         }
+    }
+    if (enlarge > 1 && width <= 512 && height <= 512) {
+        std::vector<uint8_t> big(static_cast<size_t>(width) * enlarge * height * enlarge * 4);
+        for (int y = 0; y < height * enlarge; y++) {
+            for (int x = 0; x < width * enlarge; x++) {
+                std::memcpy(&big[(static_cast<size_t>(y) * width * enlarge + x) * 4],
+                            &rgba[(static_cast<size_t>(y / enlarge) * width + x / enlarge) * 4], 4);
+            }
+        }
+        rgba.swap(big);
+        width *= enlarge;
+        height *= enlarge;
     }
     dimensions = Rml::Vector2i(width, height);
     return reinterpret_cast<Rml::TextureHandle>(
@@ -582,6 +605,7 @@ void init_hook(plume::RenderInterface* rhi, RenderDevice* device) {
     if (s.context != nullptr) {
         field_view::init(s.context, s.asset_dir);
         alerts_view::init(s.context, s.asset_dir);
+        battle_labels::init(s.context, s.asset_dir);
         organize_view::init(s.context, s.asset_dir);
         // The Esc menu loads after the Organize view so it draws on top.
         options_view::init(s.context, s.asset_dir);
@@ -749,6 +773,7 @@ void draw_hook(RenderCommandList* list, RenderFramebuffer* framebuffer) {
         std::max(0.25f, std::min(static_cast<float>(width) / 1280.0f, static_cast<float>(height) / 720.0f)));
     field_view::update();
     alerts_view::update();
+    battle_labels::update();
     organize_view::update();
     options_view::update();
     replay_input(s);

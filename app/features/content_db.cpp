@@ -139,11 +139,21 @@ constexpr Field CLASS_FIELDS[] = {
     {"item_limit", 0x47, 1, false},
 };
 
+// +0x06..+0x0D: the strikes func_ovlX_801EC2D0 (0x801EC78C) and
+// func_ovlX_801EF1A8 copy these bytes per attack; +0x0A == 8 at 0x801ECEA4 and
+// 0x801EF598 gives the status in +0x0B and switches on the rule in +0x0D
+// (content_db.hpp kStatusRuleAfterHit; LordlyCaliber attack_editor.cpp
+// nativeStatusRule).
 constexpr Field ATTACK_FIELDS[] = {
     {"name_ptr", 0x00, 4, false},
     {"kind", 0x04, 1, false},
     {"element", 0x05, 1, false},
+    {"target", 0x06, 1, false},
+    {"effect", 0x07, 1, false},
     {"formula", 0x09, 1, false},
+    {"secondary", 0x0A, 1, false},
+    {"status", 0x0B, 1, false},
+    {"status_rule", 0x0D, 1, false},
 };
 
 // A spell map row: the attack each element turns the row's generic attack
@@ -1258,6 +1268,109 @@ std::vector<BattleFormRule> battle_form_rules() {
     return rules;
 }
 
+std::optional<int> status_chance(uint16_t attack) {
+    std::lock_guard lock(records_mutex());
+    std::optional<int> chance;
+    for (const Pack& pack : g_packs) {
+        if (const auto found = pack.status_chances.find(attack); found != pack.status_chances.end()) {
+            chance = found->second;
+        }
+    }
+    return chance;
+}
+
+bool is_dot_name(std::string_view name) {
+    return !name.empty() && name.size() <= 32 && std::all_of(name.begin(), name.end(), [](char c) {
+        return (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '_' || c == '-';
+    });
+}
+
+bool is_label_text(std::string_view text) {
+    return !text.empty() && text.size() <= 16 && std::all_of(text.begin(), text.end(), [](char c) {
+        return (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == ' ' || c == '!' ||
+               c == '\'' || c == '.' || c == '-';
+    });
+}
+
+std::vector<Dot> dot_rules() {
+    std::lock_guard lock(records_mutex());
+    std::vector<Dot> rules;
+    for (const Pack& pack : g_packs) {
+        for (Dot dot : pack.dots) {
+            if (!dot.label_image.empty()) {
+                dot.label_image = (pack.folder / dot.label_image).generic_string();
+            }
+            const auto same = std::find_if(rules.begin(), rules.end(), [&](const Dot& d) { return d.name == dot.name; });
+            if (same != rules.end()) {
+                *same = dot;
+            } else {
+                rules.push_back(dot);
+            }
+        }
+    }
+    return rules;
+}
+
+std::optional<AttackDot> attack_dot(uint16_t attack) {
+    std::lock_guard lock(records_mutex());
+    std::optional<AttackDot> found;
+    for (const Pack& pack : g_packs) {
+        if (const auto at = pack.attack_dots.find(attack); at != pack.attack_dots.end()) {
+            found = at->second;
+        }
+    }
+    return found;
+}
+
+bool story_unit(int mission, int slot) {
+    // Units with a generic class that speak in the mission's dialogue. The ROM
+    // marks none of them: their spawn entries and templates match the generic
+    // units' (eset0_01 slot 31, template 299 Wizard + Knight + Hellhound; the
+    // Wizard's lines are serifu_01_4.bin).
+    static constexpr StoryUnit BUILT_IN[] = {
+        {1, 31},  // Tenne Plains: the Wizard who meets the Southern Division
+    };
+    for (const StoryUnit& unit : BUILT_IN) {
+        if (unit.mission == mission && unit.slot == slot) {
+            return true;
+        }
+    }
+    std::lock_guard lock(records_mutex());
+    for (const Pack& pack : g_packs) {
+        for (const StoryUnit& unit : pack.story_units) {
+            if (unit.mission == mission && unit.slot == slot) {
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
+std::optional<int> attack_status_by_name(std::string_view name) {
+    static constexpr std::pair<std::string_view, int> NAMES[] = {
+        {"none", 0},        {"petrify", 3},   {"sleep", 4},  {"power_up", 5},        {"power_down", 6},
+        {"undead_slaying", 7}, {"paralysis", 8}, {"poison", 10}, {"remove_ailments", 11},
+    };
+    for (const auto& [word, id] : NAMES) {
+        if (word == name) {
+            return id;
+        }
+    }
+    return std::nullopt;
+}
+
+std::optional<int> status_rule_by_name(std::string_view name) {
+    static constexpr std::pair<std::string_view, int> NAMES[] = {
+        {"every_target", 2}, {"half_hit", 4}, {"on_hit", 5}, {"killing_blow", 6}, {"quarter_hit", 11},
+    };
+    for (const auto& [word, id] : NAMES) {
+        if (word == name) {
+            return id;
+        }
+    }
+    return std::nullopt;
+}
+
 std::vector<std::pair<std::string, std::string>> status() {
     std::lock_guard lock(records_mutex());
     std::vector<std::pair<std::string, std::string>> lines;
@@ -1273,6 +1386,15 @@ std::vector<std::pair<std::string, std::string>> status() {
         }
         if (!pack.battle_forms.empty()) {
             what += ", " + std::to_string(pack.battle_forms.size()) + " BATTLE FORMS";
+        }
+        if (!pack.status_chances.empty()) {
+            what += ", " + std::to_string(pack.status_chances.size()) + " STATUS CHANCES";
+        }
+        if (!pack.dots.empty()) {
+            what += ", " + std::to_string(pack.dots.size()) + " DAMAGE OVER TIME";
+        }
+        if (!pack.story_units.empty()) {
+            what += ", " + std::to_string(pack.story_units.size()) + " STORY UNITS";
         }
         if (!pack.not_applied.empty()) {
             what += ", NOT APPLIED: " + std::to_string(pack.not_applied.size());

@@ -79,6 +79,13 @@ D-pad, the game's own mover) is the pad's pointer, read from `0x800E91D0`
 | Y tap | the command menu: the overlay's buttons (bar, top bar, strip, Dispatch list) in turn; D-pad moves, A presses, B or Y closes |
 | Y hold (300 ms) | the game's R, its hold menu |
 | RB / LB | next / previous idle unit |
+| right stick | pans the camera (2026-11-02; was C-UP/C-DOWN/C-LEFT/C-RIGHT) |
+| LT + right stick up/down | zoom (`camera_zoom.cpp`) |
+| LT + D-pad | C-UP / C-DOWN (camera angle), C-LEFT (overview map), C-RIGHT (scroll mode) |
+
+The cursor keys (WASD and the arrows) pan the camera on the MODERN open field
+instead of moving the game's cursor, and the left stick has a response curve
+(`docs/anotherworld/notes-field-controls.md` section 8).
 
 The buttons the overlay takes press nothing in the game:
 `field_select::claimed_pad_buttons()` is passed to
@@ -125,7 +132,8 @@ town. Stop stays as the halt order.
 - **Selection bar** at the bottom: a card per selected unit with the leader's
   portrait, unit number, strength bar, alignment marker with "liberates" or
   "captures", and the unit's carried items as icons (a count badge on a stack,
-  dashed squares for empty slots); click or press A on a card to remove it;
+  dashed squares for empty slots); click or press A on a card to select only
+  that unit, Shift + click to remove it (2026-11-02);
   B clears. The bar also holds the group commands (3.6).
 - Besides colour, selected units get a ring shape and a number badge, so the
   selection reads without colour.

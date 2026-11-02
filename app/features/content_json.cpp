@@ -4,6 +4,7 @@
 #include "content_db.hpp"
 
 #include <algorithm>
+#include <array>
 #include <cctype>
 #include <cstdio>
 #include <filesystem>
@@ -67,6 +68,247 @@ bool parse_hex(const std::string& text, std::vector<uint8_t>& out) {
 
 bool is_note(const std::string& key) {
     return !key.empty() && key[0] == '_';
+}
+
+// The "dots" section (design-content-database.md section 7.5): an object of
+// damage over time effects by name, each with "power" (1..100), "max_stacks",
+// "stacks_on_hit" and "stacks_per_tick" (0..9, max_stacks 1..9), "tick"
+// ("round" or "turn"), "status" (a status name or id the game keeps in a
+// fighter's flags), "attack" (1..158), "damage_down" (0..100), "visual"
+// (0..255), "visual_value" (0..65535), "tint" (0..255), "label" (text),
+// "label_color" ("#RRGGBB") and "label_image" (a PNG in the pack's folder).
+// Missing keys keep Dot's defaults.
+bool read_dots(const json& section, Pack& pack, std::string& error) {
+    if (!section.is_object() || section.size() > static_cast<size_t>(kMaxDots)) {
+        error = "expected an object of at most " + std::to_string(kMaxDots) + " effects by name";
+        return false;
+    }
+    for (const auto& [name, entry] : section.items()) {
+        if (is_note(name)) {
+            continue;
+        }
+        if (!is_dot_name(name) || !entry.is_object()) {
+            error = name + ": a name of 1..32 of a-z, 0-9, '_', '-' and an object of settings";
+            return false;
+        }
+        Dot dot;
+        dot.name = name;
+        for (const auto& [key, value] : entry.items()) {
+            if (is_note(key)) {
+                continue;
+            }
+            const auto whole = [&](int low, int high, int& out) {
+                if (!value.is_number_integer() || value.get<int64_t>() < low || value.get<int64_t>() > high) {
+                    error = name + ": " + key + " must be a whole number " + std::to_string(low) + ".." +
+                            std::to_string(high);
+                    return false;
+                }
+                out = static_cast<int>(value.get<int64_t>());
+                return true;
+            };
+            if (key == "power") {
+                if (!whole(1, 100, dot.power)) {
+                    return false;
+                }
+            } else if (key == "max_stacks") {
+                if (!whole(1, kMaxDotStacks, dot.max_stacks)) {
+                    return false;
+                }
+            } else if (key == "attack") {
+                if (!whole(1, info(Table::Attacks).count - 1, dot.attack)) {
+                    return false;
+                }
+            } else if (key == "stacks_on_hit") {
+                if (!whole(0, kMaxDotStacks, dot.stacks_on_hit)) {
+                    return false;
+                }
+            } else if (key == "stacks_per_tick") {
+                if (!whole(0, kMaxDotStacks, dot.stacks_per_tick)) {
+                    return false;
+                }
+            } else if (key == "damage_down") {
+                if (!whole(0, 100, dot.damage_down)) {
+                    return false;
+                }
+            } else if (key == "visual") {
+                if (!whole(0, 255, dot.visual)) {
+                    return false;
+                }
+            } else if (key == "visual_value") {
+                if (!whole(0, 0xFFFF, dot.visual_value)) {
+                    return false;
+                }
+            } else if (key == "tint") {
+                if (!whole(0, 255, dot.tint)) {
+                    return false;
+                }
+            } else if (key == "label") {
+                if (!value.is_string() || !is_label_text(value.get<std::string>())) {
+                    error = name + ": label must be 1..16 of A-Z, a-z, 0-9, space and ! ' . -";
+                    return false;
+                }
+                dot.label = value.get<std::string>();
+            } else if (key == "label_color") {
+                const std::string text = value.is_string() ? value.get<std::string>() : std::string();
+                int64_t rgb = 0;
+                if (text.size() != 7 || text[0] != '#' ||
+                    !std::all_of(text.begin() + 1, text.end(), [](char ch) { return std::isxdigit(static_cast<unsigned char>(ch)) != 0; }) ||
+                    !parse_number("0x" + text.substr(1), rgb)) {
+                    error = name + ": label_color must be \"#RRGGBB\"";
+                    return false;
+                }
+                dot.label_color = static_cast<uint32_t>(rgb);
+            } else if (key == "label_image") {
+                if (!value.is_string() || !is_art_path(value.get<std::string>())) {
+                    error = name + ": label_image must be a PNG path inside the pack's folder";
+                    return false;
+                }
+                dot.label_image = value.get<std::string>();
+            } else if (key == "tick") {
+                if (!value.is_string() || (value.get<std::string>() != "turn" && value.get<std::string>() != "round")) {
+                    error = name + ": tick must be \"round\" or \"turn\"";
+                    return false;
+                }
+                dot.round = value.get<std::string>() == "round";
+            } else if (key == "status") {
+                int64_t status = -1;
+                if (value.is_string()) {
+                    status = attack_status_by_name(value.get<std::string>()).value_or(-1);
+                } else if (value.is_number_integer()) {
+                    status = value.get<int64_t>();
+                }
+                if (!valid_dot_status(status)) {
+                    error = name + ": status must be petrify, sleep, paralysis or poison";
+                    return false;
+                }
+                dot.status = static_cast<int>(status);
+            } else {
+                error = name + ": unknown setting \"" + key + "\"";
+                return false;
+            }
+        }
+        pack.dots.push_back(std::move(dot));
+    }
+    return true;
+}
+
+// The "story_units" section (design-content-database.md section 7.6): an
+// array of {"mission": 0..63, "slot": 31..59}, enemy spawns the enemy
+// features leave as the ROM has them. Keys starting '_' are notes.
+bool read_story_units(const json& section, Pack& pack, std::string& error) {
+    if (!section.is_array() || section.size() > static_cast<size_t>(kMaxStoryUnits)) {
+        error = "expected an array of at most " + std::to_string(kMaxStoryUnits) + " units";
+        return false;
+    }
+    for (const json& entry : section) {
+        if (!entry.is_object()) {
+            error = "each unit is an object with \"mission\" and \"slot\"";
+            return false;
+        }
+        StoryUnit unit{-1, -1};
+        for (const auto& [key, value] : entry.items()) {
+            if (is_note(key)) {
+                continue;
+            }
+            const int64_t number = value.is_number_integer() ? value.get<int64_t>() : -1;
+            if (key == "mission") {
+                if (number < 0 || number > 63) {
+                    error = "mission must be a whole number 0..63";
+                    return false;
+                }
+                unit.mission = static_cast<int>(number);
+            } else if (key == "slot") {
+                if (number < 31 || number > 59) {
+                    error = "slot must be a whole number 31..59";
+                    return false;
+                }
+                unit.slot = static_cast<int>(number);
+            } else {
+                error = "unknown setting \"" + key + "\"";
+                return false;
+            }
+        }
+        if (unit.mission < 0 || unit.slot < 0) {
+            error = "each unit needs \"mission\" and \"slot\"";
+            return false;
+        }
+        pack.story_units.push_back(unit);
+    }
+    return true;
+}
+
+// An attack's "dot" (an effect name from a "dots" section, this pack's or
+// another's) or "dot_chance" (0..100, the share of hits that start it).
+bool read_attack_dot(const std::string& key, const json& value, uint16_t id, Pack& pack, std::string& error) {
+    AttackDot& dot = pack.attack_dots[id];
+    if (key == "dot") {
+        if (!value.is_string() || !is_dot_name(value.get<std::string>())) {
+            error = "dot must be the name of a damage over time effect";
+            return false;
+        }
+        dot.dot = value.get<std::string>();
+        return true;
+    }
+    if (!value.is_number_integer() || value.get<int64_t>() < 0 || value.get<int64_t>() > 100) {
+        error = "dot_chance must be a whole percent, 0..100";
+        return false;
+    }
+    dot.chance = static_cast<int>(value.get<int64_t>());
+    return true;
+}
+
+// An attack's "status" (a name or an id: the status after the hit, which also
+// sets +0x0A to the after-hit rule, and the rule "on_hit" when the record has
+// no "status_rule"; "none" clears all three bytes), "status_rule" (a name or
+// an id) or "status_chance" (0..100). content_db.hpp valid_attack_status.
+bool read_attack_status(const std::string& key, const json& value, bool has_rule, uint16_t id, Pack& pack,
+                        std::string& error) {
+    int64_t number = -1;
+    if (key == "status_chance") {
+        if (!value.is_number_integer() || value.get<int64_t>() < 0 || value.get<int64_t>() > 100) {
+            error = "status_chance must be a whole percent, 0..100";
+            return false;
+        }
+        pack.status_chances[id] = static_cast<int>(value.get<int64_t>());
+        return true;
+    }
+    const bool status = key == "status";
+    if (value.is_string()) {
+        const std::string word = value.get<std::string>();
+        const std::optional<int> named = status ? attack_status_by_name(word) : status_rule_by_name(word);
+        if (named) {
+            number = *named;
+        } else if (!parse_number(word, number)) {
+            number = -1;
+        }
+    } else if (value.is_number_integer()) {
+        number = value.get<int64_t>();
+    }
+    if (status && !valid_attack_status(number)) {
+        error = "status must be none, petrify, sleep, power_up, power_down, undead_slaying, paralysis, poison, "
+                "remove_ailments, or its id";
+        return false;
+    }
+    if (!status && !valid_status_rule(number)) {
+        error = "status_rule must be every_target, half_hit, on_hit, killing_blow, quarter_hit, or its id";
+        return false;
+    }
+    if (!status) {
+        pack.set_bytes(Table::Attacks, id, 0x0D, std::array<uint8_t, 1>{static_cast<uint8_t>(number)});
+    } else if (number == 0) {
+        pack.set_bytes(Table::Attacks, id, 0x0A, std::array<uint8_t, 2>{kNoStatus, kNoStatus});
+        if (!has_rule) {
+            pack.set_bytes(Table::Attacks, id, 0x0D, std::array<uint8_t, 1>{kNoStatus});
+        }
+    } else {
+        pack.set_bytes(Table::Attacks, id, 0x0A,
+                       std::array<uint8_t, 2>{kStatusRuleAfterHit, static_cast<uint8_t>(number)});
+        if (!has_rule) {
+            constexpr uint8_t ON_HIT = 5;
+            pack.set_bytes(Table::Attacks, id, 0x0D, std::array<uint8_t, 1>{ON_HIT});
+        }
+    }
+    return true;
 }
 
 // A new class's "change_class" block (class_change.hpp): "family_of", the
@@ -927,6 +1169,20 @@ std::optional<Pack> parse_pack_checked(std::string_view text, std::string id, st
         if (is_note(table_name)) {
             continue;
         }
+        if (table_name == "dots") {
+            if (!read_dots(records, pack, error)) {
+                error = "dots: " + error;
+                return std::nullopt;
+            }
+            continue;
+        }
+        if (table_name == "story_units") {
+            if (!read_story_units(records, pack, error)) {
+                error = "story_units: " + error;
+                return std::nullopt;
+            }
+            continue;
+        }
         if (table_name == "battle_forms") {
             if (!read_battle_forms(records, pack, error)) {
                 error = "battle_forms: " + error;
@@ -1024,6 +1280,20 @@ std::optional<Pack> parse_pack_checked(std::string_view text, std::string id, st
                             return std::nullopt;
                         }
                         pack.set_bytes(*table, rid, static_cast<uint16_t>(offset), bytes);
+                    }
+                    continue;
+                }
+                if (*table == Table::Attacks && (key == "dot" || key == "dot_chance")) {
+                    if (!read_attack_dot(key, value, rid, pack, error)) {
+                        error = where + ": " + error;
+                        return std::nullopt;
+                    }
+                    continue;
+                }
+                if (*table == Table::Attacks && (key == "status" || key == "status_rule" || key == "status_chance")) {
+                    if (!read_attack_status(key, value, record.contains("status_rule"), rid, pack, error)) {
+                        error = where + ": " + error;
+                        return std::nullopt;
                     }
                     continue;
                 }

@@ -74,7 +74,9 @@
 
 #include <librecomp/overlays.hpp>
 
+#include "battle_dot.hpp"
 #include "battle_figures.hpp"
+#include "battle_status.hpp"
 #include "content_db.hpp"
 #include "recomp.h"
 
@@ -547,6 +549,7 @@ uint32_t attack(uint8_t* rdram, recomp_context* ctx, uint32_t participant, uint3
 
 // Before a handler reads +0x6C and +0x94 at the start of a strike.
 extern "C" void ogre_battle_form_strike(uint8_t* rdram, recomp_context* ctx, uint32_t participant, uint32_t site) {
+    ogre::battle_status::strike_started(participant);
     if (!enabled()) {
         return;
     }
@@ -578,6 +581,12 @@ extern "C" void ogre_battle_form_strike(uint8_t* rdram, recomp_context* ctx, uin
 
 // 0x801EFDE0: the computation is over; every form goes back.
 extern "C" void ogre_battle_form_compute_end(uint8_t* rdram, recomp_context* ctx) {
+    // The round's damage over time ticks first, while every form still holds.
+    ogre::battle_dot::compute_end(rdram, ctx);
+    // The next fight tries its figures again: the round reset at 0x801AFF84
+    // runs before a session's first fight only (played, 2026-11-02: one set of
+    // reset lines, then five fights), so it cannot clear the list.
+    ogre::battle_figures::new_fight();
     const uint32_t state = rd32(rdram, BATTLE_STATE);
     if (!in_rdram(state) || state != g_state) {
         return;
@@ -664,6 +673,7 @@ extern "C" void ogre_battle_form_message(uint8_t* rdram, recomp_context* ctx, ui
 }
 
 extern "C" void ogre_battle_form_reset(uint8_t* rdram, recomp_context* /*ctx*/, uint32_t participant) {
+    ogre::battle_figures::new_fight();
     const int index = index_of(rdram, participant);
     if (index < 0) {
         return;

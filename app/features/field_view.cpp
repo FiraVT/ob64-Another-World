@@ -1027,8 +1027,8 @@ void update() {
     }
     set_inner(g_marks, g_marks_shown, marks);
 
-    // The selection bar: a count, one card per selected unit (a click removes
-    // it) and the command grid.
+    // The selection bar: a count, one card per selected unit (a click selects
+    // only that unit, Shift + click removes it) and the command grid.
     std::string bar;
     if (!picked_units.empty()) {
         bar = "<div class=\"count\"><div class=\"countnum\">" + std::to_string(picked_units.size()) +
@@ -1051,7 +1051,8 @@ void update() {
                pad_hint(SDL_CONTROLLER_BUTTON_Y) + (field_select::pad_menu_open() ? " close menu" : " menu, hold: game menu") +
                "</span><span>" + pad_hint(SDL_CONTROLLER_BUTTON_B) + (field_select::pad_menu_open() ? " close" : " clear") +
                "</span><span>" + pad_hint(SDL_CONTROLLER_BUTTON_LEFTSHOULDER) + pad_hint(SDL_CONTROLLER_BUTTON_RIGHTSHOULDER) +
-               " idle units</span>";
+               " idle units</span><span>" + glyph(pad_axis_prompt_image(SDL_CONTROLLER_AXIS_RIGHTX), "RS") +
+               " camera, " + glyph(pad_axis_prompt_image(SDL_CONTROLLER_AXIS_TRIGGERLEFT), "LT") + " + it: zoom</span>";
     }
     set_inner(g_help, g_help_shown, help);
     g_help->SetClass("raised", !picked_units.empty());

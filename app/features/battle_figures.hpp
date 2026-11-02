@@ -21,4 +21,8 @@ namespace ogre::battle_figures {
 int ensure(uint8_t* rdram, recomp_context* ctx, uint32_t cls, uint32_t key, uint32_t side, uint32_t alt,
            uint32_t variant, uint32_t handle);
 
+// A fight's computation is over (battle_form.cpp's compute-end hook): the
+// next fight may try every figure again.
+void new_fight();
+
 }  // namespace ogre::battle_figures

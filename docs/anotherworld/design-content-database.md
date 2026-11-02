@@ -93,6 +93,9 @@ changed by offset (`"bytes"`).
 | classes | `item_limit` | `+0x47` | 1 | `lbu` `0x8016D25C` | this project (`design-organize-screen.md`) |
 | attacks | `kind`, `element` | `+0x04`, `+0x05` | 1 | `lbu` `0x8016E48C`, `0x8016E4A8` | this project (`game_addresses.hpp`) |
 | attacks | `formula` | `+0x09` | 1 | battle bank X copies `+0x06..+0x0D` (`func_ovlX_801EC2D0`) | this project (`design-class-rebalance.md`) |
+| attacks | `target`, `effect` | `+0x06`, `+0x07` | 1 | the same copy (`0x801EC78C`, `0x801EF1FC`); `+0x07` goes to the immunity check `func_ovlX_801F46FC` | LordlyCaliber ("target selector", "main effect") |
+| attacks | `dot`, `dot_chance` | none (port data) | - | read by `battle_dot.cpp` at the hit hooks `0x801EAC14`, `0x801ED01C` | this project; section 7.5 |
+| attacks | `secondary`, `status`, `status_rule` | `+0x0A`, `+0x0B`, `+0x0D` | 1 | `lbu` `0x801ECEA4` (`+0x0A == 8`), `0x801ECEBC`, `0x801ECEB8`; the same in `func_ovlX_801EF1A8` at `0x801EF598` | LordlyCaliber (`attack_editor.cpp` `nativeStatusRule`); section 7.4 |
 | items | `category`, `element`, `grade` | `+0x04` .. `+0x06` | 1 | `lbu` `0x8016F5FC`, `0x8016F610`, `0x8016F648` | lfarroco (category, element); LordlyCaliber (grade) |
 | items | `price` | `+0x08` | 2 | `lhu` `0x8016F660` | this project (`design-war-director.md` 4.10) |
 | items | `str`, `int`, `agi`, `dex`, `vit`, `men` | `+0x0A` .. `+0x0F` | 1, signed | `lbu` then `sll 24` (`0x8016F6BC`, ...) | LordlyCaliber |
@@ -298,6 +301,136 @@ segment B is filled from `assets/ogre64.z64` (the game was not run):
 
 The values are the game's own: a class's base stat and growth, an attack id
 and count per row, an item price in goth.
+
+### 7.4 Attack statuses
+
+An attack gives a status after its hit when its record's `+0x0A` is 8: the
+battle's strikes (`func_ovlX_801EC2D0`, `func_ovlX_801EF1A8`) roll it once per
+target, with the status in `+0x0B` and the rule in `+0x0D`, and the immunity
+check `func_ovlX_801F46FC` then decides. The ROM uses it for Petrify (petrify,
+half the hit chance), Sacred Breath and Divine Ray (undead slaying on a
+killing blow) and the elder dragons' back-row attacks. Three keys of an
+attack set it:
+
+```json
+"attacks": { "37": { "status": "poison", "status_rule": "half_hit", "status_chance": 75 } }
+```
+
+- `status`: `none`, `petrify` (3), `sleep` (4), `power_up` (5), `power_down`
+  (6), `undead_slaying` (7), `paralysis` (8), `poison` (10),
+  `remove_ailments` (11), or the id. It writes `+0x0A` = 8 and `+0x0B`, and
+  `+0x0D` = 5 (`on_hit`) when the record has no `status_rule`. `none` writes
+  `0xFF` to the three bytes.
+- `status_rule`: `every_target` (2), `half_hit` (4, half the hit chance),
+  `on_hit` (5), `killing_blow` (6), `quarter_hit` (11), or the id.
+- `status_chance`: 0..100. The status lands on this share of the target's
+  hits instead of the rule's roll (`battle_status.cpp`, the hooks at
+  `0x801EABF8` in the generic attack routine, which resolves the breaths, and
+  `0x801ED000` and `0x801EF6EC` in the combined and Pedra routines). The last
+  loaded pack that gives one wins.
+
+A script can stop or change a status that lands with the `battle_status`
+event (`design-lua.md`).
+
+### 7.5 Damage over time
+
+A pack's `dots` section names effects that deal damage at ticks for the rest
+of a fight (`battle_dot.cpp`). An effect starts when its `status` lands on a
+fighter, from any attack, or when an attack whose `dot` names it hits:
+
+```json
+"dots": {
+  "poison": { "status": "poison", "power": 30, "max_stacks": 5, "stacks_on_hit": 0,
+              "stacks_per_tick": 1, "tick": "round", "attack": 71, "visual": 8 },
+  "burn":   { "power": 10, "max_stacks": 3, "tick": "round", "damage_down": 10, "visual": 10,
+              "label": "BURNING", "label_color": "#FF8A2A", "label_image": "art/burning.png" }
+},
+"attacks": { "33": { "dot": "burn", "dot_chance": 50 } }
+```
+
+| setting | range | default | meaning |
+|---|---|---|---|
+| `power` | 1..100 | 20 | a tick is this percent of the game's damage formula (`func_ovlX_801F44A0`) for the effect's attack, times the stacks |
+| `max_stacks` | 1..9 | 1 | the most stacks |
+| `stacks_on_hit` | 0..9 | 1 | stacks a new start adds to a running effect; 0 keeps it as it is. For an effect that follows a status, a status roll that lands on a fighter that already has it counts as a new start (the game itself refuses the second status) |
+| `stacks_per_tick` | 0..9 | 0 | stacks added after each tick: a growing effect |
+| `tick` | `round`, `turn` | `round` | `round`: at the end of each round, when every fighter still in the fight has made that many attacks or has none left, and when the fight ends inside a round; `turn`: after each of the fighter's own actions |
+| `status` | `petrify`, `sleep`, `paralysis`, `poison` | none | starts when the status lands; ends when the fighter loses it |
+| `attack` | 1..158 | none | the formula a tick uses when the starting attack deals no damage of its own (the poison spells) |
+| `damage_down` | 0..100 | 0 | percent less damage the fighter deals per stack, at most 90; heals are not lowered |
+| `visual` | 0..255 | 0 | the battle effect a tick plays on the fighter (event `0x36`): 8 the poison effect, 14 an attack's visual |
+| `visual_value` | 0..65535 | 0 | the effect's value; for 14 the attack id |
+| `label` | 1..16 of A-Z, a-z, 0-9, space, `! ' . -` | none | a word the port draws over the fighter at each tick, in `label_color` |
+| `label_color` | `"#RRGGBB"` | `#FFFFFF` | the word's color |
+| `label_image` | a PNG path inside the pack's folder | none | pixel art the port draws instead of the word, at picture-pixel size scaled to the window |
+| `tint` | 0..255 | the starting strike's | the color the fighter flashes with its tick's number (the damage event's param, an index into the playback's figure tint table); by default the hit color of the strike that started the effect |
+
+An attack's `dot` names an effect (any pack's) and `dot_chance` (0..100,
+default 100) is the share of hits that start it. A tick's damage goes through
+the game's own damage routine (`func_ovlX_801E7508`), so it can defeat a
+fighter and end the fight. Scripts see each tick with `battle_dot` and each
+round's end with `battle_round_end` (`design-lua.md`).
+
+The visual kinds are LordlyCaliber's reading of the playback handler
+(`func_0021EBBC` revision 0, case `0x36` calls `func_002267A8(fighter, kind,
+value)`) and the game's own use at `0x801E8144` (kind 14, an attack id); the
+other kinds there are 4 petrify, 5 sleep, 9 power up, 10 power down and 11 a
+cure. Kind 14 asks the battle for an attack's visual, and what it draws for
+an attack the fight has not loaded is not yet seen in play; status kinds such
+as 8 are the game's own effects.
+
+A label shows beside the effect's `visual` (the Another World mod's burn has
+the game's Power Down effect and its own BURNING art), at each tick and, for an
+effect that follows no game status, also when a hit starts or stacks it, at
+the hit's time (`$s7 + *(sp+0xA8)` in the generic routine, the time of its
+damage call at `0x801EAC48`; `$s7 + *(sp+0x120)` in the combined routine). An
+effect that follows a status gets the game's own effect when it lands. The tick registers it
+and schedules event `0x36` with kind `0xF0`; the playback reaches the event at
+the tick's time and calls the battle effect routine `func_ovlJ_801E34F8`,
+whose entry hook (`battle_labels.cpp`) takes the label, places it at the
+fighter's screen position (`func_ovlC_801C9048` on `+0x5C/+0x60/+0x64`, as
+the playback's case `0x32` places a number) and returns before the routine
+makes a game effect. The port's overlay (`ui/battle_labels.rml`) shows it
+rising and fading for 1.2 seconds.
+
+Each tick shows the game's number popup (event 12 through
+`func_ovlJ_801DA010`, as the display routine `func_ovlJ_801E0D54` schedules it:
+the number, the hit pose and the tint, and the shown HP goes down). The
+strikes' damage event 31 only queues a number until an attack's impact shows
+it, so a tick never uses it. After the popup a tick schedules the end of the
+hit reaction with `func_ovlJ_801E08C8` at the hit pose's length (pose 17,
+`func_ovlJ_801DF2CC`), and the fighter's next action waits for it; without
+that end, a fight that ended on a round's ticks froze in the playback. A tick
+that defeats a fighter shows no fall: the game's defeat routine
+`func_ovlJ_801E0AEC` belongs to the playback. `OGRE_DOT_TRACE=1` logs every tick and, at
+the end of each fight, each effect's total damage and tick count.
+
+### 7.6 Story units
+
+The enemy features rewrite generic enemy units at mission load (the war
+director's garrison, ENEMY RANKS, FORMATIONS and WEAPONS in
+`war_director.cpp`) and give them battle extras (`boss_escorts.cpp`). They
+leave alone the boss (spawn entry 0, slot 30) and any unit that uses a story
+class (81 and up). Some units that speak in a mission's dialogue use generic
+classes, and the ROM marks them nowhere: Tenne Plains' Wizard (`eset0_01`
+slot 31, template 299: Wizard, Knight, Hellhound; its lines are in
+`serifu_01_4.bin`) has a spawn entry and a template of the same shape as the
+generic units'. The port keeps its own list of such units
+(`content_db.cpp` `story_unit`), and a pack can add to it:
+
+```json
+{
+  "story_units": [
+    {"mission": 1, "slot": 31, "_note": "Tenne Plains: the Wizard"}
+  ]
+}
+```
+
+`mission` is the mission index (`0x8018F4A1`; 1 is Tenne Plains, the order of
+`tools/mission_data.py`), `slot` the spawn entry's unit slot (31..59; the
+`slot` column of `docs/mission-enemies.md`). A listed unit keeps the ROM's
+classes, levels, squares and gear, and gets no battle extras. The list applies
+from the next mission load.
 
 ### 7.0 Spells
 

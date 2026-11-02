@@ -163,6 +163,7 @@ with the pack off, every hook point gives the game's own value.
 | file | rule | was |
 |---|---|---|
 | `class-rebalance.json` | the class and attack record changes (`design-class-rebalance.md`) | `app/content/class-rebalance.json` |
+| `breath-status.json` | the elemental dragon breaths give a status after the damage: Lightning paralysis 25%, Acid power down 75%, Rotten poison 75%, Cold sleep 25% (`design-content-database.md` 7.4); poison from any source deals damage at the end of each round that grows 1x..5x (30% of a hit a step, and a step for each new poisoning), and Fire Breath's burn (50% of hits, up to 3 stacks) deals light damage each round and lowers the unit's damage 10% a stack, shown with the game's Power Down effect and the pack's BURNING art (`art/burning.png`) (7.5) | new (2026-11-02) |
 | `battle-tactics.lua` | Faerie's Throw a Kiss becomes Healing when an ally on its side is below 70% HP; each ready Centurion (34, 35, 94) gives every Soldier on its side one more attack | `app/features/battle_ai.cpp` |
 | `shared-exp.lua` | a battle's EXP is pooled across the player's unit and split with the game's weighting `max(1, average level - level + 8)^2` | `app/features/exp_share.cpp`, GAMEPLAY > SHARED EXP |
 | `class-rules.lua` | class changes do not check alignment; a large class takes one place in a unit | `class_rebalance.cpp`, GAMEPLAY > CLASS ALIGNMENT and LARGE UNITS |

@@ -81,6 +81,38 @@ constexpr std::array<uint16_t, 5> kSpellRowAttacks = {45, 46, 47, 48, 145};
 // attack_data.cpp validateSpellLinks). Pack::set_field checks it.
 bool spell_target(int64_t attack);
 
+// An attack's status after the hit (record +0x0A..+0x0D). The battle's
+// strikes (func_ovlX_801EC2D0 at 0x801ECEA4, func_ovlX_801EF1A8 at 0x801EF598)
+// roll it once per target when +0x0A holds kStatusRuleAfterHit: +0x0B is the
+// status, +0x0D the rule that decides whether it lands, and
+// func_ovlX_801F46FC then applies the target's immunity. The ids are
+// LordlyCaliber's (attack_data.cpp statuses(), attack_editor.cpp
+// nativeStatusRule) and match the ROM's own uses (Petrify 3, Sacred Breath 7,
+// Radiant Gale 8, Crimson Note 6, Evil Dead 4).
+constexpr uint8_t kStatusRuleAfterHit = 8;
+constexpr uint8_t kNoStatus = 0xFF;  // +0x0A, +0x0B and +0x0D of an attack with none
+// A status a pack or a script may give: 3 petrify, 4 sleep, 5 power up,
+// 6 power down, 7 undead slaying (a killing blow on undead), 8 paralysis,
+// 10 poison, 11 remove ailments. 0 is none.
+constexpr bool valid_attack_status(int64_t status) {
+    return status == 0 || (status >= 3 && status <= 8) || status == 10 || status == 11;
+}
+// A status a damage over time may follow (Dot::status): the four the game
+// keeps in the fighter's flags (+0x40): 3 petrify (0x02), 4 sleep (0x04),
+// 8 paralysis (0x08), 10 poison (0x10) (func_ovlX_801E7DBC).
+constexpr bool valid_dot_status(int64_t status) {
+    return status == 3 || status == 4 || status == 8 || status == 10;
+}
+// A status rule (+0x0D): 2 every target, 4 half the hit chance, 5 every hit,
+// 6 a killing blow, 11 a quarter of the hit chance.
+constexpr bool valid_status_rule(int64_t rule) {
+    return rule == 2 || rule == 4 || rule == 5 || rule == 6 || rule == 11;
+}
+// The JSON names of the statuses and rules ("poison", "half_hit"); nullopt
+// for another word.
+std::optional<int> attack_status_by_name(std::string_view name);
+std::optional<int> status_rule_by_name(std::string_view name);
+
 // The seven class stats, in record order (class +0x08 + 4*stat).
 enum Stat : uint8_t { HP, STR, VIT, INT, MEN, AGI, DEX };
 constexpr int kStatCount = 7;
@@ -157,6 +189,50 @@ constexpr int kMaxBattleStrikes = 9;
 constexpr int kMaxBattleForms = 32;    // classes in one strike's "form" list
 constexpr int kMaxBattleAttacks = 32;  // attacks in one strike's "attack" list
 
+// A damage over time (a "dots" entry; battle_dot.cpp, design-content-database.md
+// section 7.5). A tick deals `power` percent of the game's own damage formula
+// (func_ovlX_801F44A0) for the attack that started it, times the stacks.
+struct Dot {
+    std::string name;         // "poison": 1..32 of a-z, 0-9, '_', '-'
+    int power = 20;           // 1..100
+    int max_stacks = 1;       // 1..9
+    int stacks_on_hit = 1;    // 0..9: stacks a new start adds to a running effect
+    int stacks_per_tick = 0;  // 0..9: stacks each tick adds after it (a growing effect)
+    bool round = true;        // true: a tick at the end of each round; false: after each of the victim's actions
+    int status = 0;           // valid_dot_status: starts when that status lands, from any attack, and ends when it is cured; 0 none
+    int attack = 0;           // 1..158: the formula a tick uses when the starting attack deals no damage; 0 none
+    int damage_down = 0;      // 0..100: percent less damage the fighter deals, per stack (at most 90 in all)
+    int visual = 0;           // 0..255: the battle effect a tick plays on the fighter (func_002267A8's kind); 0 none
+    int visual_value = 0;     // 0..65535: its value (kind 14: an attack id, whose visual plays)
+    int tint = -1;            // 0..255: the color the fighter flashes at a tick (the damage event's param); -1 the starting strike's own
+    // A label the port draws over the fighter at each tick (battle_labels.cpp):
+    // the image when there is one, else the text in `label_color`.
+    std::string label;             // is_label_text; empty none
+    uint32_t label_color = 0xFFFFFFu;  // 0xRRGGBB
+    std::string label_image;       // a PNG in the pack's folder (is_art_path); dot_rules gives it as a full path
+};
+// A label's text: 1..16 of A-Z, a-z, 0-9, space and ! ' . - (no markup).
+bool is_label_text(std::string_view text);
+constexpr int kMaxDotStacks = 9;
+constexpr int kMaxDots = 32;  // effects in one pack
+
+// A story unit: an enemy spawn the enemy features leave as the ROM has it
+// (war_director.cpp's garrison, boss_escorts.cpp). `mission` is the mission
+// index (0x8018F4A1: 1 Tenne Plains), `slot` the spawn entry's unit slot
+// (31..59; 30 is the boss, which is always kept).
+struct StoryUnit {
+    int mission = 0;
+    int slot = 0;
+};
+constexpr int kMaxStoryUnits = 256;  // in one pack
+bool is_dot_name(std::string_view name);
+
+// An attack's "dot" and "dot_chance": a hit starts that effect, or adds a stack.
+struct AttackDot {
+    std::string dot;
+    int chance = 100;  // 0..100
+};
+
 // True for an art file name a pack may give: a relative path of 1 to 128
 // characters inside the pack's folder (letters, digits, '-', '_', '.', '/'),
 // with no ".." part and ending in ".png".
@@ -185,6 +261,14 @@ struct Pack {
     std::vector<NameEdit> names;
     std::vector<NewClass> new_classes;
     std::vector<BattleForm> battle_forms;
+    // Attack id -> "status_chance" (0..100): the status lands on this share of
+    // the target's hits, in place of the attack's status rule (battle_status.cpp).
+    std::map<uint16_t, int> status_chances;
+    // The "dots" section, and attack id -> its "dot" (battle_dot.cpp).
+    std::vector<Dot> dots;
+    std::map<uint16_t, AttackDot> attack_dots;
+    // The "story_units" section.
+    std::vector<StoryUnit> story_units;
     // Parts of the source the port does not apply yet (a LordlyCaliber
     // project's other sections, its added classes and items).
     std::vector<std::string> not_applied;
@@ -253,6 +337,9 @@ struct AttackRecord : Record {
     uint8_t kind() const { return u8(0x04); }
     uint8_t element() const { return u8(0x05); }
     uint8_t formula() const { return u8(0x09); }  // 0x01 physical, 0x07 magic
+    uint8_t secondary() const { return u8(0x0A); }    // kStatusRuleAfterHit: a status after the hit
+    uint8_t status() const { return u8(0x0B); }       // valid_attack_status
+    uint8_t status_rule() const { return u8(0x0D); }  // valid_status_rule
 };
 
 struct ItemRecord : Record {
@@ -375,6 +462,21 @@ struct BattleFormRule {
     std::vector<Strike> strikes;
 };
 std::vector<BattleFormRule> battle_form_rules();
+
+// An attack's "status_chance" (0..100) from the last loaded pack that gives
+// one, or nullopt for the attack's own status rule. Any thread.
+std::optional<int> status_chance(uint16_t attack);
+
+// The damage over time effects of every loaded pack, one per name (a later
+// pack's replaces an earlier one's), and an attack's "dot" from the last pack
+// that gives one. Any thread.
+std::vector<Dot> dot_rules();
+std::optional<AttackDot> attack_dot(uint16_t attack);
+
+// True for a story unit: the port's own list (units whose class is generic
+// but who speak in a mission's dialogue) or any loaded pack's "story_units".
+// Any thread.
+bool story_unit(int mission, int slot);
 
 // A record's current name: a pack's, else the ROM's. "Short Sword";
 // "Altar of\nResurrection" for a two-line name.

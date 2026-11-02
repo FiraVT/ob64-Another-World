@@ -18,6 +18,7 @@
 #include "field_view.hpp"
 #include "game_events.hpp"
 #include "organize_view.hpp"
+#include "camera_zoom.hpp"
 #include "game_host.hpp"
 #include "input_map.hpp"
 #include "recomp.h"
@@ -119,6 +120,8 @@ std::atomic<bool> g_y_game{false};  // Y held long: the game's R (its hold menu)
 std::atomic<uint32_t> g_held_claims{0};  // pad buttons taken at their press, until release
 std::atomic<int> g_inject_a{0};  // polls of the game's A still to press
 std::atomic<int> g_stick_x{0}, g_stick_y{0};  // the left stick, for PAUSE ON SELECT
+std::atomic<uint16_t> g_key_pan{0};  // the cursor keys' N64 D-pad bits, taken for the camera pan
+std::atomic<float> g_rs_x{0.0f}, g_rs_y{0.0f};  // the right stick's pan push, shaped, y down
 std::atomic<uint32_t> g_dpad_held{0};
 float g_press_x = 0.0f, g_press_y = 0.0f, g_now_x = 0.0f, g_now_y = 0.0f;
 
@@ -271,9 +274,16 @@ void command(const std::string& id, bool shift) {
         pick(slot, shift);
     }
     else if (id.size() > 1 && id[0] == 's') {
-        // Selection card: drop that unit from the selection.
+        // Selection card: select only that unit; Shift drops it from the
+        // selection (maintainer, 2026-11-02: a plain click removing the unit
+        // was the opposite of what a click on a group card should do).
         const int slot = std::atoi(id.c_str() + 1);
-        g_selected.erase(std::remove(g_selected.begin(), g_selected.end(), slot), g_selected.end());
+        if (shift) {
+            g_selected.erase(std::remove(g_selected.begin(), g_selected.end(), slot), g_selected.end());
+        }
+        else {
+            g_selected = {slot};
+        }
     }
     else if (id == "cmd-stop" && !g_selected.empty()) {
         Order order;
@@ -657,21 +667,56 @@ void run_orders(uint8_t* rdram, recomp_context* ctx) {
 ogre::events::Subscribe g_run{ogre::events::Event::FieldUpdate, "field orders",
                               [](const ogre::events::Args& e) { run_orders(e.rdram, e.ctx); }};
 
-// The RTS edge pan (developer, 2026-10-30). The game's own scroll
-// (func_ovlN_801BECF0, after its cursor mover) moves the camera at
-// *(0x8019F5AC) only while its cursor moves, by delta/128 x speed, adding the
-// same amount to the eye (+0x14 x, +0x1C z) and the look-at point (+0x20 x,
-// +0x28 z) and keeping the point inside the map's world rect (0x801F0DD8 min
-// x, 0x801F0DDC min z, 0x801F0DE0 max x, 0x801F0DE4 max z); screen right is
-// +x and screen up +z. Pressing the D-pad from the pointer made the pan
-// follow the cursor's ramp and its pull back to the screen centre. This moves
-// the camera itself, once per frame at that function's exit (FieldFrame,
-// 0x801BEF60): the velocity eases towards the pointer's push (about 0.1 s to
-// full speed or to rest), the speed is 1.2 camera distances a second in real
-// time, so it feels the same at every zoom and game speed, and the look-at
-// point stays inside the world rect. Only on the open field (mode 0).
-constexpr uint32_t CAMERA_PTR = 0x8019F5ACu;
+// The RTS camera pan (developer, 2026-10-30; keyboard and right stick
+// 2026-11-02). The game's own scroll (func_ovlN_801BECF0, after its cursor
+// mover) moves the camera at *(0x8018F5AC) only while the stick or D-pad pushes
+// the cursor past its clamp box (the mover sets 0x801F3630 at 0x801BEC70), by
+// delta/128 x speed, adding the same amount to the eye (+0x14 x, +0x1C z) and
+// the look-at point (+0x20 x, +0x28 z) and keeping the point inside the map's
+// world rect (0x801F0DD8 min x, 0x801F0DDC min z, 0x801F0DE0 max x, 0x801F0DE4
+// max z); screen right is +x and screen up is -z (the scroll negates the
+// stick's y at 0x801BED58..0x801BED5C before adding it to z; an earlier
+// version of this comment said +z, and W panned down). Pressing the D-pad from the
+// pointer made the pan follow the cursor's ramp. This moves the camera itself,
+// once per frame at that function's exit (FieldFrame, 0x801BEF60), from three
+// inputs: the pointer at the window's edge, the cursor keys, and the right
+// stick (pan_input). The velocity eases towards the push (about 0.1 s to full
+// speed or to rest), the speed is 1.2 camera distances a second in real time,
+// so it feels the same at every zoom and game speed, and the look-at point
+// stays inside the world rect. Only on the open field (mode 0). The pointer
+// word was 0x8019F5AC until 2026-11-02, which holds bank code, so the pan
+// never moved (docs/anotherworld/notes-field-controls.md).
+constexpr uint32_t CAMERA_PTR = 0x8018F5ACu;
 constexpr uint32_t WORLD_RECT = 0x801F0DD8u;
+
+// The camera push, -1..1 per axis (x right, y down): the pointer at the
+// window's edge while the keyboard and mouse are in use, the cursor keys
+// (keyboard_pan), and the right stick (pad_camera_buttons), summed and clamped.
+void pan_input(float& x, float& y) {
+    x = y = 0.0f;
+    if (!pad_in_use()) {
+        x += static_cast<float>(g_pan_x.load(std::memory_order_relaxed));
+        y += static_cast<float>(g_pan_y.load(std::memory_order_relaxed));
+    }
+    const uint16_t keys = g_key_pan.load(std::memory_order_relaxed);
+    x += ((keys & N64_BTN_RIGHT) ? 1.0f : 0.0f) - ((keys & N64_BTN_LEFT) ? 1.0f : 0.0f);
+    y += ((keys & N64_BTN_DOWN) ? 1.0f : 0.0f) - ((keys & N64_BTN_UP) ? 1.0f : 0.0f);
+    x += g_rs_x.load(std::memory_order_relaxed);
+    y += g_rs_y.load(std::memory_order_relaxed);
+    // OGRE_FIELD_PAN_FORCE=<x>,<y>: a constant push, a test aid so a scripted
+    // run can measure the pan with nobody at the mouse, keys or pad.
+    static const std::pair<float, float> forced = [] {
+        float fx = 0.0f, fy = 0.0f;
+        if (const char* v = std::getenv("OGRE_FIELD_PAN_FORCE"); v != nullptr) {
+            std::sscanf(v, "%f,%f", &fx, &fy);
+        }
+        return std::make_pair(fx, fy);
+    }();
+    x += forced.first;
+    y += forced.second;
+    x = std::clamp(x, -1.0f, 1.0f);
+    y = std::clamp(y, -1.0f, 1.0f);
+}
 
 uint32_t float_bits(float f) {
     uint32_t b;
@@ -687,8 +732,12 @@ void pan_camera(uint8_t* rdram) {
     const float dt = std::min(0.1f, std::chrono::duration<float>(now - last).count());
     last = now;
     const bool open_field = owns_field() && rd32(rdram, 0x801F0E00u) == 0;
-    const float want_x = open_field ? static_cast<float>(g_pan_x.load(std::memory_order_relaxed)) : 0.0f;
-    const float want_z = open_field ? -static_cast<float>(g_pan_y.load(std::memory_order_relaxed)) : 0.0f;
+    float push_x = 0.0f, push_y = 0.0f;
+    if (open_field) {
+        pan_input(push_x, push_y);
+    }
+    const float want_x = push_x;
+    const float want_z = push_y;  // screen up is -z (see above)
     const float ease = std::min(1.0f, dt * 10.0f);
     vel_x += (want_x - vel_x) * ease;
     vel_z += (want_z - vel_z) * ease;
@@ -1011,6 +1060,87 @@ uint32_t claimed_pad_buttons() {
     return claims;
 }
 
+uint16_t keyboard_pan(uint16_t buttons) {
+    constexpr uint16_t dpad = N64_BTN_UP | N64_BTN_DOWN | N64_BTN_LEFT | N64_BTN_RIGHT;
+    if (!pad_field() || pad_menu_open()) {
+        g_key_pan.store(0, std::memory_order_relaxed);
+        return buttons;
+    }
+    g_key_pan.store(buttons & dpad, std::memory_order_relaxed);
+    return static_cast<uint16_t>(buttons & ~dpad);
+}
+
+namespace {
+
+// The stick's response on the open field: a radial dead zone, then a curve
+// that keeps small pushes slow, starting just past the game's own dead zone
+// (4 of the stick's 82, func_ovlN_801BE4E0 at 0x801BE544) so the first
+// movement is never swallowed. 0..1 in, 0..1 out.
+float stick_curve(float r, float dead) {
+    if (r <= dead) {
+        return 0.0f;
+    }
+    const float t = std::min(1.0f, (r - dead) / (1.0f - dead));
+    return 0.06f + 0.94f * std::pow(t, 1.8f);
+}
+
+}  // namespace
+
+uint16_t pad_camera_buttons(uint16_t buttons, float left_trigger, float right_x, float right_y) {
+    if (!pad_field()) {
+        g_rs_x.store(0.0f, std::memory_order_relaxed);
+        g_rs_y.store(0.0f, std::memory_order_relaxed);
+        return buttons;
+    }
+    // The right stick no longer presses C buttons here, whether from the fixed
+    // layer (sdl_platform.cpp skips it) or from a CONTROLS binding.
+    constexpr float kLayer = 8000.0f / 32767.0f;
+    if (right_y < -kLayer) buttons &= static_cast<uint16_t>(~N64_BTN_C_UP);
+    if (right_y > kLayer) buttons &= static_cast<uint16_t>(~N64_BTN_C_DOWN);
+    if (right_x < -kLayer) buttons &= static_cast<uint16_t>(~N64_BTN_C_LEFT);
+    if (right_x > kLayer) buttons &= static_cast<uint16_t>(~N64_BTN_C_RIGHT);
+    const bool held = left_trigger > 0.5f;
+    if (held && !pad_menu_open()) {
+        // LT + D-pad: the C buttons (camera angle up/down, overview map,
+        // scroll mode), and the D-pad itself presses nothing.
+        uint16_t c = 0;
+        if (buttons & N64_BTN_UP) c |= N64_BTN_C_UP;
+        if (buttons & N64_BTN_DOWN) c |= N64_BTN_C_DOWN;
+        if (buttons & N64_BTN_LEFT) c |= N64_BTN_C_LEFT;
+        if (buttons & N64_BTN_RIGHT) c |= N64_BTN_C_RIGHT;
+        buttons = static_cast<uint16_t>((buttons & ~(N64_BTN_UP | N64_BTN_DOWN | N64_BTN_LEFT | N64_BTN_RIGHT)) | c);
+    }
+    // LT + right stick zooms (camera_zoom.cpp), so the stick pans only
+    // without the trigger.
+    float x = 0.0f, y = 0.0f;
+    const float r = std::sqrt(right_x * right_x + right_y * right_y);
+    if (!held && r > 0.0f) {
+        const float s = stick_curve(std::min(r, 1.0f), 0.2f) / r;
+        x = right_x * s;
+        y = right_y * s;
+    }
+    g_rs_x.store(x, std::memory_order_relaxed);
+    g_rs_y.store(y, std::memory_order_relaxed);
+    return buttons;
+}
+
+void shape_stick(float& x, float& y) {
+    if (!pad_field()) {
+        return;
+    }
+    const float r = std::sqrt(x * x + y * y);
+    if (r <= 0.0f) {
+        return;
+    }
+    const float s = stick_curve(std::min(r, 1.0f), 0.12f) / r;
+    x *= s;
+    y *= s;
+}
+
+bool modern_field() {
+    return pad_field();
+}
+
 bool pad_circle(float& x, float& y, float& radius) {
     std::lock_guard<std::mutex> lock(g_mutex);
     if (!g_circle || !game_cursor(x, y)) {
@@ -1161,13 +1291,19 @@ bool handle(const SDL_Event& event, SDL_Window* window, bool panel_owns_mouse) {
         return false;
     }
     if (own && event.type == SDL_MOUSEWHEEL && event.wheel.windowID == id) {
-        // Over the army strip the wheel scrolls it; elsewhere it is swallowed (it
-        // would press the D-pad and move the game's cursor).
+        // Over the army strip the wheel scrolls it; elsewhere it zooms the
+        // camera (camera_zoom.cpp) or is swallowed (it would press the D-pad
+        // and move the game's cursor).
         int mx = 0, my = 0, win_w = 0, win_h = 0;
         SDL_GetMouseState(&mx, &my);
         SDL_GetWindowSize(window, &win_w, &win_h);
         if (win_w > 0 && win_h > 0 && field_view::over_strip(mx / static_cast<float>(win_w), my / static_cast<float>(win_h))) {
             g_strip_scroll.fetch_add(-event.wheel.y * 80);
+        }
+        else {
+            float fx = 0.0f, fy = 0.0f;
+            to_framebuffer(window, mx, my, fx, fy);
+            camera_zoom::wheel(event.wheel.y, fx, fy);
         }
         return true;
     }
@@ -1360,8 +1496,9 @@ void update_pause() {
     // command menu, where the D-pad walks the menu).
     const bool steering = std::abs(g_stick_x.load()) > 12000 || std::abs(g_stick_y.load()) > 12000 ||
                           (g_dpad_held.load() != 0 && !g_menu_open);
-    const bool scrolling = g_pan_x.load(std::memory_order_relaxed) != 0 || g_pan_y.load(std::memory_order_relaxed) != 0 ||
-                           steering;
+    float push_x = 0.0f, push_y = 0.0f;
+    pan_input(push_x, push_y);
+    const bool scrolling = push_x != 0.0f || push_y != 0.0f || steering;
     host::hold_game(want_pause && !scrolling);
 }
 

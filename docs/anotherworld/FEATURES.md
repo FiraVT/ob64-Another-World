@@ -41,6 +41,32 @@ in a game yet.
   the draw hung on a class it had not loaded. A full figure cache (20) or a
   failed load is logged as `[battle-figure]`. `battle_figures.cpp`,
   `docs/anotherworld/design-battle-transform.md`.
+- **Attack statuses** (built, not played). An attack in a pack can give a
+  status after its damage: `"status"` (poison, sleep, paralysis, petrify,
+  power down and the rest), `"status_rule"` (the game's rules: every hit,
+  half or a quarter of the hit chance, a killing blow) and `"status_chance"`
+  (a percent of the hits). The roll is per target, so a breath that hits a
+  whole unit can poison each member. A script's `battle_status` event can
+  stop or change a status as it lands. The Another World mod's
+  `breath-status.json` gives four elemental breaths their statuses and Fire
+  Breath a burn (Damage over time, below).
+  `battle_status.cpp`, `content_json.cpp`,
+  `docs/anotherworld/design-content-database.md` section 7.4.
+- **Damage over time** (built, not played). A pack's `dots` effects deal
+  damage at the end of each round of a fight (every unit still fighting has
+  made one more attack), or after each of the unit's actions. An effect
+  follows a status from any source or starts on an attack's hit, can stack,
+  can grow each tick, can lower the unit's damage, and plays a battle effect
+  on the unit; a tick's number flashes the unit in the hit color of the
+  attack that started it, and an effect can show a label of the mod's own
+  (a word in a color, or pixel art) over the unit at each tick. Ticks use the
+  game's own damage formula and can
+  defeat a unit; `OGRE_DOT_TRACE=1` logs each fight's totals.
+  Scripts get `battle_dot` per tick and `battle_round_end` per round. In the
+  Another World mod, poison (30% a step) grows 1x to 5x each round, and each
+  new poisoning of a poisoned unit adds a step; Fire Breath burns
+  (up to 3 stacks, 10% less damage per stack, Power Down and BURNING labels). `battle_dot.cpp`,
+  `docs/anotherworld/design-content-database.md` section 7.5.
 - **Battle forms** (passed a scripted battle run, not played by hand). A pack's `battle_forms` rule makes a class
   fight each strike of a battle as another class with its own attack: the
   example `battle-forms` mod gives every Fighter three strikes, a Slash, a
@@ -128,6 +154,13 @@ in a game yet.
   promote too.
 - **Extra members.** Enemy units, including bosses, can field members beyond
   the five a unit record holds, scaled by difficulty. `boss_escorts.cpp`.
+  The boss unit gains members built from its escort: 1 on EASY; on NORMAL 1
+  for missions 1..10, then 1 or 2; on HARD and VETERAN 1 to 4. The count is
+  fixed for each war and mission.
+- **Story units.** Units that speak in a mission's dialogue keep the ROM's
+  classes and gear and get no extras, as the boss does, also when their class
+  is a generic one (Tenne Plains' Wizard). A pack adds more with
+  `story_units` (`design-content-database.md` section 7.6).
 
 ## Classes and battle
 
@@ -183,6 +216,24 @@ in a game yet.
   speed is honoured, and FRAME RATE = DISPLAY interpolates the mission field to
   the monitor's refresh rate. `field_speed.cpp`, `frame_rate.cpp`.
 - **Alerts.** Short messages stack at the top right and fade. `alerts.cpp`.
+- **Camera zoom** (CAMERA ZOOM). The mouse wheel, or the right stick with the
+  left trigger held, zooms the mission field from half to three times the
+  game's camera distance, and the world map from 0.5x to 2x inside its frame.
+  The wheel zooms on the pointer, the pad on the screen centre; in a game menu
+  the wheel still moves the menu. Unit picking and the cursor follow the zoom.
+  The level persists for the session. `camera_zoom.cpp`,
+  `docs/anotherworld/design-camera-zoom.md`.
+- **Camera pan** (PORT MENUS: MODERN; not played). On the open field the
+  camera moves by itself at the same on-screen speed at every zoom: the pointer
+  at the window's edge, the cursor keys (WASD and the arrows), or the right
+  stick. Holding LT turns the right stick into zoom and the D-pad into the C
+  buttons (camera angle up/down, overview map, scroll mode). The left stick has
+  a response curve for fine aiming. With the keyboard and mouse in use, the
+  game's cursor stays under the pointer, and the pointer is the game's own
+  wand drawn by the operating system, with no lag (the game's copy is hidden).
+  CLASSIC keeps the game's own controls.
+  `field_select.cpp`, `mission_cursor.cpp`,
+  `docs/anotherworld/notes-field-controls.md`.
 
 ## Menus and screens
 

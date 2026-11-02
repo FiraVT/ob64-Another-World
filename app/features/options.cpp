@@ -94,6 +94,9 @@ constexpr ChoiceInfo kChoices[kChoiceCount] = {
      "The left stick moves the game's cursor and the N64 analog stick. INVERTED swaps left and right."},
     {"stick_y", {"NORMAL", "INVERTED"}, 2, 0, "STICK UP / DOWN",
      "NORMAL: pushing the left stick up moves the cursor up. INVERTED swaps up and down."},
+    {"camera_zoom", {"OFF", "ON"}, 2, 1, "CAMERA ZOOM",
+     "ON: the mouse wheel, or the right stick with the left trigger held, zooms the mission field and the "
+     "world map. The wheel zooms on the pointer, the stick on the screen centre. OFF: the game's own view."},
 };
 
 // Where each option shows in the Esc menu, in menu order.
@@ -107,6 +110,7 @@ constexpr Placement kLayout[] = {
     {"CONTROLS", "GAMEPAD", Choice::ButtonPrompts},
     {"CONTROLS", "GAMEPAD", Choice::StickX},
     {"CONTROLS", "GAMEPAD", Choice::StickY},
+    {"CONTROLS", "CAMERA", Choice::CameraZoom},
     {"GRAPHICS", "DISPLAY", Choice::PauseUnfocused},
     {"GRAPHICS", "RENDERING", Choice::PixelFilter},
     {"GRAPHICS", "HD ASSETS", Choice::HdTextures},

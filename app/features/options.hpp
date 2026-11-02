@@ -40,8 +40,9 @@ enum class Choice {
     AutoEnding = 23,      // LIBERATE / CAPTURE / EITHER: how the AI takes towns (auto_commander.cpp)
     StickX = 24,          // NORMAL / INVERTED: the left stick's x as the N64 stick (sdl_platform.cpp get_input)
     StickY = 25,          // NORMAL / INVERTED: the left stick's y as the N64 stick
+    CameraZoom = 26,      // OFF / ON, ON by default: wheel and LT + right stick zoom (camera_zoom.cpp)
 };
-constexpr int kChoiceCount = 26;
+constexpr int kChoiceCount = 27;
 
 int choice_option_count(Choice choice);
 const char* choice_label(Choice choice, int index);

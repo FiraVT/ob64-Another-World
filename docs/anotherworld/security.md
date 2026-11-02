@@ -38,6 +38,47 @@ should not go.
   table's record count and record size before the pack is accepted, and the
   arena has a fixed end. Guest RAM is the emulated N64's memory, which the port
   allocates; a pack never writes host memory or files.
+- **Attack statuses** (`status`, `status_rule`, `status_chance` of an attack,
+  `design-content-database.md` section 7.4). `status` and `status_rule` write
+  bytes `+0x0A`, `+0x0B` and `+0x0D` of an attack record inside the attack
+  table, and only the ids the game's own status code has (statuses 0, 3..8,
+  10, 11; rules 2, 4, 5, 6, 11). `status_chance` is a whole percent 0..100
+  kept by the port; the hook (`battle_status.cpp`) uses it to set the strike's
+  own result register and writes nothing else. Eleven cases in
+  `content_pack_test` cover the accepted forms, an unknown name, status 16,
+  a status past a byte, an unknown rule, a chance over 100, a negative chance,
+  a chance as a string and a status on another table, four more check the
+  bytes each form writes, and five check `valid_attack_status`, the range of
+  the `battle_status` event.
+- **Damage over time** (`dots`, an attack's `dot` and `dot_chance`,
+  `design-content-database.md` section 7.5). Every setting is a whole number
+  in a fixed range (power 1..100, stacks 0..9, damage down 0..100, a visual
+  kind 0..255 and value 0..65535, a tint 0..255, an attack 1..158), a label
+  is 1..16 of letters, digits, space and `! ' . -` (no markup reaches the
+  overlay), a label color is `#RRGGBB`, a label image is a PNG path inside the
+  pack's folder (`is_art_path`: no `..`, no root, no drive), a status is one of the
+  four the game keeps in a fighter's flags, a name is 1..32 of a-z, 0-9, `_`
+  and `-`, and a pack holds at most 32 effects. During a battle the port
+  writes only inside the battle's participant table and the event timeline,
+  through the game's own routines: a fighter's HP and flags by
+  `func_ovlX_801E7508`, events by the game's schedulers, its time cursor
+  (`+0x94`), and the source's action words (`+0x78`, `+0x7C`), which it puts
+  back after the damage call. Thirty-two cases in `content_pack_test` cover
+  the accepted forms, a section that is not an object, bad names, every
+  setting out of its range, an unknown setting, 33 effects, an attack `dot`
+  that is not a name, a chance over 100, a `dot` on another table, a label
+  with markup, a label too long or empty, a label color without `#` or not
+  hex, and a label image that climbs out, starts at a drive or is not a PNG, one
+  checks the settings read, and three check `valid_dot_status`.
+- **Story units** (`story_units`, `design-content-database.md` section 7.6).
+  A unit is a mission 0..63 and an enemy slot 31..59, both whole numbers. The
+  port only reads the list: a listed unit is left out of the enemy features'
+  rewrites (`war_director.cpp`'s garrison, `boss_escorts.cpp`), so a pack
+  writes nothing through it. A pack holds at most 256 units. Nine cases in
+  `content_pack_test` cover the accepted form, a section that is not an array,
+  the boss slot 30, slot 60, mission 64, a missing slot, a slot as text, an
+  unknown setting and 257 units, and one checks the units read and the port's
+  own list.
 - **Battle forms** (`battle_forms`, `design-battle-transform.md`). A rule
   makes the port write, during a battle, the class and class key words (`+0x48`,
   `+0x4C`) of a fighter in the battle's participant table, which is guest RAM
@@ -177,8 +218,11 @@ RDRAM. Their range checks are `lua_runtime.hpp` `valid_character`,
 options and nothing else (section 1, mod options). The filter events
 (`design-lua.md` section 5) return a
 number to the game's code only inside the event's range (an attack 0..158, an
-attack count 0..15, an alignment byte, 1 or 2 places); any other return keeps
-the game's value.
+attack count 0..15, an alignment byte, 1 or 2 places, a status the game has:
+`valid_attack_status`, with cases in `content_pack_test`); any other return
+keeps the game's value. `battle_status` writes the status it returns into the
+strike's own stack slot for the status, the byte the game's immunity check
+reads next. `battle_dot` returns a tick's damage, 0..9999.
 
 ### 3.2 What a script cannot reach
 

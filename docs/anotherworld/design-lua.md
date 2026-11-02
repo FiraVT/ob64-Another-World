@@ -96,6 +96,9 @@ and `"rewards"` (`spells`: rows 0..4 for attacks 45..48 and 145,
 | `battle_start`, `battle_end` | main | the battle bank (ROM `0x22A250`) becomes resident in scene `0x0D`, and leaves | the player's unit (0..29), or -1 |
 | `battle_attack` | game | `ogre_battle_pick_attack` (`0x801C89E4`), after a battle form rule | the fighter (0..19) and the attack; return an attack 0..158 |
 | `battle_attack_count` | game | `ogre_battle_attack_count`, before each store of the fight's attack count | the fighter and the count; return 0..15 |
+| `battle_status` | game | `ogre_battle_status` (`0x801ED000`, `0x801EF6EC`), when an attack's status lands on a target, after its `status_chance` | the fighter, the target (0..19), the attack and the status; return 0 to stop it, or a status 3..8, 10 or 11 |
+| `battle_dot` | game | `battle_dot.cpp`, each damage over time tick (`design-content-database.md` section 7.5) | the target (0..19), the source fighter, the attack whose formula it uses, the stacks and the damage; return the damage 0..9999 (0 skips the tick) |
+| `battle_round_end` | game | `battle_dot.cpp`, at the end of each round of a fight, after the round's ticks | the round (1, 2, ..); a hook for round-based rules |
 | `class_alignment` | game, main | the Change Class and qualify checks' alignment loads; the Organize view's chart | the limit byte; return 0..255 (255: no limit) |
 | `unit_size` | game, main | the Organize rules (bank S), `organize_edit.cpp`, the war director's `place_cost` | a class's size (1 or 2); return the places it takes, 1..2 |
 

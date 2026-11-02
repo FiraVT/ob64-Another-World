@@ -304,6 +304,34 @@ code = '''
 decls = ["void ogre_mission_cursor_note_move(uint8_t* rdram)"]
 
 [[hook]]
+name = "mission cursor draw (801B0BF4)"
+rom = 0x105334
+anchor = '''
+@@    func_ovlN_801BBA40(rdram, ctx);
+'''
+code = '''
+    // mission cursor draw: func_ovlN_801BBA40 draws the field cursor (the wand
+    // and its other forms) at ($f12, $f14); in MODERN with the keyboard and mouse
+    // in use the OS cursor shows the wand, so the game's is drawn off-screen
+    // (app/src/mission_cursor.cpp).
+    ogre_mission_cursor_draw(rdram, ctx);
+'''
+decls = ["void ogre_mission_cursor_draw(uint8_t* rdram, recomp_context* ctx)"]
+
+[[hook]]
+name = "mission cursor drawn (801B0BFC)"
+rom = 0x10533C
+anchor = '''
+@@    // 0x801B0BFC: jal         0x801C05C4
+'''
+code = '''
+    // mission cursor drawn: copy the wand out of the commands func_ovlN_801BBA40
+    // just wrote, for the OS pointer (app/src/mission_cursor.cpp).
+    ogre_mission_cursor_drawn(rdram);
+'''
+decls = ["void ogre_mission_cursor_drawn(uint8_t* rdram)"]
+
+[[hook]]
 name = "map cursor (801A1C48)"
 rom = 0x080BD8
 anchor = '''
@@ -316,6 +344,63 @@ code = '''
     ogre_map_cursor(rdram, (int32_t)ctx->r3);
 '''
 decls = ["void ogre_map_cursor(uint8_t* rdram, int32_t state)"]
+
+# Camera zoom on the world map (app/features/camera_zoom.cpp,
+# docs/anotherworld/design-camera-zoom.md): four points in func_ovlM_801A103C.
+[[hook]]
+name = "map zoom terrain (801A1860)"
+rom = 0x0807F0
+# The terrain loop (0x801A16BC..0x801A185C) has written its 25 strips; the
+# display list's head (0x800E9BA0) is their end.
+anchor = '''
+@@    // 0x801A1860: lui         $s3, 0xE200
+'''
+code = '''
+    // map zoom: the terrain strips for the zoomed view (app/features/camera_zoom.cpp).
+    ogre_map_zoom_terrain(rdram);
+'''
+decls = ["void ogre_map_zoom_terrain(uint8_t* rdram)"]
+
+[[hook]]
+name = "map zoom sprites (801A18F8)"
+rom = 0x080888
+# func_ovlM_801A349C, 801A2D84 and 801A2A7C have drawn the map layer's labels,
+# markers and party; the screen-space overlay loop at 0x801A194C follows.
+anchor = '''
+    after_2:
+@@    // 0x801A18F8: addu        $t4, $zero, $zero
+'''
+code = '''
+    // map zoom: scale the map layer's sprites (app/features/camera_zoom.cpp).
+    ogre_map_zoom_sprites(rdram);
+'''
+decls = ["void ogre_map_zoom_sprites(uint8_t* rdram)"]
+
+[[hook]]
+name = "map zoom cursor begin (801A1C4C)"
+rom = 0x080BDC
+anchor = '''
+@@    // 0x801A1C4C: lh          $a1, 0x54($v1)
+'''
+code = '''
+    // map zoom: the cursor sprite starts here (app/features/camera_zoom.cpp).
+    ogre_map_zoom_cursor_begin(rdram);
+'''
+decls = ["void ogre_map_zoom_cursor_begin(uint8_t* rdram)"]
+
+[[hook]]
+name = "map zoom cursor end (801A1C58)"
+rom = 0x080BE8
+# The return from the cursor's func_ovlM_8019F83C call.
+anchor = '''
+    after_5:
+@@    // 0x801A1C58: lui         $a1, 0xF500
+'''
+code = '''
+    // map zoom: move the cursor sprite into the zoomed view (app/features/camera_zoom.cpp).
+    ogre_map_zoom_cursor_end(rdram);
+'''
+decls = ["void ogre_map_zoom_cursor_end(uint8_t* rdram)"]
 
 [[hook]]
 name = "battle AI attack pick (801C89E4)"
@@ -1286,3 +1371,186 @@ code = '''
     ogre_idle_wait(rdram);
 '''
 decls = ["void ogre_idle_wait(uint8_t* rdram)"]
+
+[[hook]]
+name = "attack status (801ED000)"
+rom = 0x230280
+# func_ovlX_801EC2D0: the branch every status rule joins, the status's
+# result in $s1, before the immunity check func_ovlX_801F46FC
+# (app/features/battle_status.cpp).
+anchor = '''
+L_801ED000:
+@@    // 0x801ED000: beq         $s1, $zero, L_801ED01C
+'''
+code = '''
+    // attack status: chance and script (801ED000, app/features/battle_status.cpp).
+    ctx->r17 = (int32_t)ogre_battle_status(rdram, 0, (uint32_t)MEM_BU(0X227, ctx->r29), (uint32_t)ctx->r19,
+                                           (uint32_t)ctx->r18, (uint32_t)ctx->r17, (uint32_t)ADD32(ctx->r29, 0X170));
+'''
+decls = ["uint32_t ogre_battle_status(uint8_t* rdram, uint32_t attacker, uint32_t attack, uint32_t target, uint32_t hit, uint32_t landed, uint32_t status_address)"]
+
+[[hook]]
+name = "attack status (801EF6EC)"
+rom = 0x23296C
+# func_ovlX_801EF1A8: as 801ED000, with the hit in $s7, the target in $s4,
+# the status at sp+0xA8 and the attack id at byte 2 of the action *(sp+0x11C).
+anchor = '''
+L_801EF6EC:
+@@    // 0x801EF6EC: beq         $s1, $zero, L_801EF708
+'''
+code = '''
+    // attack status: chance and script (801EF6EC, app/features/battle_status.cpp).
+    ctx->r17 = (int32_t)ogre_battle_status(rdram, 0, (uint32_t)MEM_BU(0X2, (gpr)MEM_W(0X11C, ctx->r29)), (uint32_t)ctx->r20,
+                                           (uint32_t)ctx->r23, (uint32_t)ctx->r17, (uint32_t)ADD32(ctx->r29, 0XA8));
+'''
+decls = ["uint32_t ogre_battle_status(uint8_t* rdram, uint32_t attacker, uint32_t attack, uint32_t target, uint32_t hit, uint32_t landed, uint32_t status_address)"]
+
+[[hook]]
+name = "attack status (801EABF8)"
+rom = 0x22DE78
+# func_ovlX_801E9E9C, the generic attack routine (the breaths): as 801ED000,
+# with the attacker in $s6, the attack id at +0x7C of it, the hit in $s2, the
+# target in $s3 and the status at sp+0xE8 (app/features/battle_status.cpp).
+anchor = '''
+L_801EABF8:
+@@    // 0x801EABF8: beq         $s1, $zero, L_801EAC14
+'''
+code = '''
+    // attack status: chance and script (801EABF8, app/features/battle_status.cpp).
+    ctx->r17 = (int32_t)ogre_battle_status(rdram, (uint32_t)ctx->r22, (uint32_t)MEM_W(0X7C, ctx->r22), (uint32_t)ctx->r19,
+                                           (uint32_t)ctx->r18, (uint32_t)ctx->r17, (uint32_t)ADD32(ctx->r29, 0XE8));
+'''
+decls = ["uint32_t ogre_battle_status(uint8_t* rdram, uint32_t attacker, uint32_t attack, uint32_t target, uint32_t hit, uint32_t landed, uint32_t status_address)"]
+
+[[hook]]
+name = "damage over time: compute start (801EFAF0)"
+rom = 0x232D70
+# func_ovlX_801EFACC begins computing a fight (app/features/battle_dot.cpp).
+anchor = '''
+@@    // 0x801EFAF0: jal         0x801CD41C
+'''
+code = '''
+    // damage over time: a fight's computation starts (801EFAF0, app/features/battle_dot.cpp).
+    ogre_battle_dot_compute_start(rdram);
+'''
+decls = ["void ogre_battle_dot_compute_start(uint8_t* rdram)"]
+
+[[hook]]
+name = "damage over time: actors (801EFD34)"
+rom = 0x232FB4
+# The action's actors at sp+0xF0 (up to three fighters), before the strike
+# routines take them.
+anchor = '''
+@@    // 0x801EFD34: addu        $a0, $s5, $zero
+'''
+code = '''
+    // damage over time: the action's actors (801EFD34, app/features/battle_dot.cpp).
+    ogre_battle_dot_actors(rdram, (uint32_t)ADD32(ctx->r29, 0XF0));
+'''
+decls = ["void ogre_battle_dot_actors(uint8_t* rdram, uint32_t list)"]
+
+[[hook]]
+name = "damage over time: turn end (801EFBF0)"
+rom = 0x232E70
+# The compute loop's top after every action, before its "is the battle over"
+# test func_801CC46C: the actors of the action just made take their ticks.
+anchor = '''
+@@    // 0x801EFBF0: jal         0x801CC46C
+'''
+code = '''
+    // damage over time: the turn ticks (801EFBF0, app/features/battle_dot.cpp).
+    ogre_battle_dot_turn_end(rdram, ctx);
+'''
+decls = ["void ogre_battle_dot_turn_end(uint8_t* rdram, recomp_context* ctx)"]
+
+[[hook]]
+name = "damage over time: ailment (801E7DBC)"
+rom = 0x22B03C
+# func_ovlX_801E7DBC(target, &status) applies an ailment.
+anchor = '''
+@@    // 0x801E7DBC: addiu       $sp, $sp, -0x20
+'''
+code = '''
+    // damage over time: an ailment's target and status (801E7DBC, app/features/battle_dot.cpp).
+    ogre_battle_dot_ailment_begin(rdram, (uint32_t)ctx->r4, (uint32_t)ctx->r5);
+'''
+decls = ["void ogre_battle_dot_ailment_begin(uint8_t* rdram, uint32_t target, uint32_t status)"]
+
+[[hook]]
+name = "damage over time: ailment set (801E7F30)"
+rom = 0x22B1B0
+# func_ovlX_801E7DBC's one exit: the status byte holds what it set, 0 when
+# refused.
+anchor = '''
+L_801E7F30:
+@@    // 0x801E7F30: lw          $ra, 0x18($sp)
+'''
+code = '''
+    // damage over time: a status that starts an effect (801E7F30, app/features/battle_dot.cpp).
+    ogre_battle_dot_ailment_end(rdram);
+'''
+decls = ["void ogre_battle_dot_ailment_end(uint8_t* rdram)"]
+
+[[hook]]
+name = "damage over time: hit (801EAC14)"
+rom = 0x22DE94
+# func_ovlX_801E9E9C after a target's hit and status rolls: $s2 hit, $s3
+# target, $s6 attacker, sp+0x1C7 the strike's hit color.
+anchor = '''
+L_801EAC14:
+@@    // 0x801EAC14: addu        $v0, $v0, $s5
+'''
+code = '''
+    // damage over time: an attack's effect on a hit (801EAC14, app/features/battle_dot.cpp).
+    ogre_battle_dot_hit(rdram, ctx, (uint32_t)ctx->r22, (uint32_t)ctx->r19, (uint32_t)ctx->r18, (uint32_t)MEM_BU(0X1C7, ctx->r29),
+                        (uint32_t)ADD32(ctx->r23, MEM_W(0XA8, ctx->r29)));
+'''
+decls = ["void ogre_battle_dot_hit(uint8_t* rdram, recomp_context* ctx, uint32_t attacker, uint32_t target, uint32_t hit, uint32_t tint, uint32_t time)"]
+
+[[hook]]
+name = "damage over time: hit (801ED01C)"
+rom = 0x23029C
+# func_ovlX_801EC2D0 after a target's hit and status rolls: $s2 hit, $s3
+# target, sp+0x21F the strike's hit color; the attacker is the action's first
+# actor.
+anchor = '''
+L_801ED01C:
+@@    // 0x801ED01C: addu        $v0, $v0, $s4
+'''
+code = '''
+    // damage over time: an attack's effect on a hit (801ED01C, app/features/battle_dot.cpp).
+    ogre_battle_dot_hit(rdram, ctx, 0, (uint32_t)ctx->r19, (uint32_t)ctx->r18, (uint32_t)MEM_BU(0X21F, ctx->r29),
+                        (uint32_t)ADD32(ctx->r23, MEM_W(0X120, ctx->r29)));
+'''
+decls = ["void ogre_battle_dot_hit(uint8_t* rdram, recomp_context* ctx, uint32_t attacker, uint32_t target, uint32_t hit, uint32_t tint, uint32_t time)"]
+
+[[hook]]
+name = "damage over time: damage down (801F4468)"
+rom = 0x2376E8
+# func_ovlX_801F36CC, the game's damage amount: its one exit, with the source
+# in $s2 and the amount in $v0.
+anchor = '''
+L_801F4468:
+@@    // 0x801F4468: lw          $ra, 0x34($sp)
+'''
+code = '''
+    // damage over time: a weakened fighter's damage (801F4468, app/features/battle_dot.cpp).
+    ctx->r2 = (int32_t)ogre_battle_dot_amount(rdram, (uint32_t)ctx->r18, (uint32_t)ctx->r2);
+'''
+decls = ["uint32_t ogre_battle_dot_amount(uint8_t* rdram, uint32_t source, uint32_t amount)"]
+
+[[hook]]
+name = "battle labels (801E34F8)"
+rom = 0x226778
+# func_ovlJ_801E34F8(fighter, kind, value), the battle effect routine the
+# playback's event 0x36 calls (LordlyCaliber func_002267A8): a port label
+# (kind 0xF0) is queued and the routine returns before making a game effect
+# (app/features/battle_labels.cpp).
+anchor = '''
+@@    // 0x801E34F8: addiu       $sp, $sp, -0x20
+'''
+code = '''
+    // battle labels: a port label instead of a game effect (801E34F8, app/features/battle_labels.cpp).
+    if (ogre_battle_label(rdram, ctx, (uint32_t)ctx->r4, (uint32_t)ctx->r5, (uint32_t)ctx->r6)) { ctx->r2 = 0; return; }
+'''
+decls = ["int ogre_battle_label(uint8_t* rdram, recomp_context* ctx, uint32_t fighter, uint32_t kind, uint32_t value)"]

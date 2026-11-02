@@ -78,6 +78,18 @@ bool drag_box(float& x0, float& y0, float& x1, float& y1);
 // open field"). claimed_pad_buttons() is a mask of `1 << SDL_GameControllerButton`
 // that must press nothing in the game; it is read on every input poll.
 uint32_t claimed_pad_buttons();
+// The MODERN open field's camera controls (docs/anotherworld/notes-field-controls.md
+// section 8). keyboard_pan takes the keyboard's N64 D-pad bits (the cursor keys)
+// for the camera pan and returns the buttons without them. pad_camera_buttons
+// takes the right stick for the pan, drops the C buttons the right stick would
+// press, and turns LT + D-pad into the C buttons; the trigger and stick are
+// -1..1 with y down. shape_stick applies the field's response curve to the left
+// stick (-1..1). Each leaves its input alone off the MODERN open field.
+uint16_t keyboard_pan(uint16_t buttons);
+uint16_t pad_camera_buttons(uint16_t buttons, float left_trigger, float right_x, float right_y);
+void shape_stick(float& x, float& y);
+// MODERN, field mode 0, no Organize view and no Esc menu.
+bool modern_field();
 // X held: the selection circle, in framebuffer pixels, around the game's cursor.
 bool pad_circle(float& x, float& y, float& radius);
 // The overlay button the pad's command menu (Y) has in focus, or "".
