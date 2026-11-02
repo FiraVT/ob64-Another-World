@@ -68,10 +68,11 @@ evidence behind each change are in `docs/anotherworld/DECISIONS.md`.
   hanging the game.
 - The game never writes to `%APPDATA%`; settings, saves and mods stay beside
   the executable.
-
-### Not yet played
-
-- Clicking squares with the mouse at the zoom limits.
+- On the field, the cursor follows the mouse at the mouse's own speed, since
+  it is now the OS pointer.
+- On the field, the cursor no longer stops and holds the game at the edge of
+  the play area: with the pointer at the window edge, the camera pans.
+- Clicking squares works at every zoom level.
 
 ## 0.2.0 (2026-11-01)
 
