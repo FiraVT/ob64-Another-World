@@ -49,8 +49,8 @@ evidence behind each change are in `docs/anotherworld/DECISIONS.md`.
 - **Battle forms** (`battle_forms`): a class fights each strike of a battle as
   another class with its own attack, with the game's transformation effect.
   A strike's form and attack can each be a list drawn at random, and
-  `"attack": "breath"` gives the form's breath from any row. The Dragon Knight
-  example breathes as a random elder dragon on each strike.
+  `"attack": "breath"` gives the form's breath from any row. The battle-forms
+  and Dragon Knight examples are in the source repository, not the package.
 - **Damage over time** (`dots`) and **attack statuses** (`status`,
   `status_rule`, `status_chance`, Lua filter `battle_status`) for packs.
   A damage over time effect can carry its own label, a PNG or a coloured
