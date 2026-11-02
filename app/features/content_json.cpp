@@ -467,6 +467,68 @@ bool read_lordlycaliber_attacks(const json& section, Pack& pack, const EditChang
     return true;
 }
 
+// The class and attack ids inside a LordlyCaliber project's class edits. The
+// project numbers its added classes from 165 and its added attacks from 159;
+// the port gives a new class its own id (content_db.hpp class_id) and does
+// not apply added attacks. A class link (+0x41 base_class, +0x43
+// intermediate_class, +0x45 key) to an added class becomes a one-byte edit on
+// that class's key (Edit::value_key). A link to a class the project does not
+// add, and a row attack (+0x37, +0x39, +0x3B) past the attack table, are left
+// out, so the record keeps the value it starts with, and listed. 0xFF is
+// "none" in all six fields in every retail class record and is kept.
+void translate_class_ids(Pack& pack, const std::vector<std::string>& added_keys) {
+    constexpr uint8_t NONE = 0xFF;
+    constexpr uint16_t LINKS[] = {0x41, 0x43, 0x45};
+    constexpr uint16_t ROW_ATTACKS[] = {0x37, 0x39, 0x3B};
+    const int classes = info(Table::Classes).count;
+    const int attacks = info(Table::Attacks).count;
+    int missing_classes = 0;
+    int added_attacks = 0;
+    std::vector<Edit> out;
+    out.reserve(pack.edits.size());
+    for (Edit& edit : pack.edits) {
+        if (edit.table != Table::Classes || edit.mask != 0xFFu) {
+            out.push_back(std::move(edit));
+            continue;
+        }
+        size_t start = 0;
+        const auto keep = [&](size_t end) {
+            if (end > start) {
+                out.push_back({edit.table, edit.id, static_cast<uint16_t>(edit.offset + start),
+                               std::vector<uint8_t>(edit.bytes.begin() + start, edit.bytes.begin() + end), 0xFFu,
+                               edit.key});
+            }
+        };
+        for (size_t i = 0; i < edit.bytes.size(); i++) {
+            const uint16_t offset = static_cast<uint16_t>(edit.offset + i);
+            const uint8_t value = edit.bytes[i];
+            const bool link = std::find(std::begin(LINKS), std::end(LINKS), offset) != std::end(LINKS);
+            const bool attack = std::find(std::begin(ROW_ATTACKS), std::end(ROW_ATTACKS), offset) != std::end(ROW_ATTACKS);
+            if (value == NONE || (link && value < classes) || (attack && value < attacks) || (!link && !attack)) {
+                continue;
+            }
+            keep(i);
+            start = i + 1;
+            const size_t index = static_cast<size_t>(value - classes);
+            if (link && value >= classes && index < added_keys.size()) {
+                out.push_back({Table::Classes, edit.id, offset, {NONE}, 0xFFu, edit.key, added_keys[index]});
+            } else if (link) {
+                missing_classes++;
+            } else {
+                added_attacks++;
+            }
+        }
+        keep(edit.bytes.size());
+    }
+    pack.edits = std::move(out);
+    if (missing_classes > 0) {
+        pack.not_applied.push_back(std::to_string(missing_classes) + " class links to classes the project does not add");
+    }
+    if (added_attacks > 0) {
+        pack.not_applied.push_back(std::to_string(added_attacks) + " class row attacks that are added attacks");
+    }
+}
+
 // A LordlyCaliber project (rempred/LordlyCaliber, native/engine/project.cpp,
 // Project::manifest): {"format": "LordlyCaliberProject", "version": 1,
 // "sourceSha256": ..., "records": {"classes"|"items"|"consumables": {"<id>":
@@ -684,6 +746,7 @@ std::optional<Pack> parse_lordlycaliber(const json& root, Pack pack, std::string
             pack.not_applied.push_back(std::to_string(added) + " names of added " + info(table).name);
         }
     }
+    translate_class_ids(pack, added_keys);
     if (const auto attacks = root.find("attacks"); attacks != root.end() && !attacks->is_null()) {
         if (!read_lordlycaliber_attacks(*attacks, pack, edit_changed, error)) {
             error = "attacks: " + error;

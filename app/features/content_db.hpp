@@ -95,6 +95,9 @@ struct Edit {
     std::vector<uint8_t> bytes;
     uint8_t mask = 0xFFu;
     std::string key;  // a new class's key ("my-mod.dragon-knight"): `id` is resolved when packs apply
+    // A new class's key whose id is this one-byte edit's value, resolved when
+    // packs apply (a LordlyCaliber class link to an added class).
+    std::string value_key;
 };
 
 // A new name for a record, in the game's encoding (encode_name). The bridge
@@ -200,6 +203,13 @@ struct Pack {
     // Writes a named field. False for an unknown field or a value that does not
     // fit its width.
     bool set_field(Table table, uint16_t id, std::string_view field, int64_t value);
+    // After a set_field or a set_name: the entry just added replaces an earlier
+    // one for the same field or name, and is dropped when it holds the same
+    // bytes, so the pack keeps one entry per target. No two fields share a bit,
+    // so this keeps the result of the writes. True when the pack changed. A
+    // script's pack uses it on every content.set (lua_runtime.cpp).
+    bool keep_one_edit();
+    bool keep_one_name();
 };
 
 // A read-only view of one record's bytes.
@@ -299,7 +309,8 @@ bool load();
 bool loaded();
 
 // Reads the JSON packs again (tick does this when a file in either folder
-// changes). Bytes that no pack writes any more get their ROM value back.
+// changes), and saves/class-ids.json when it was not readable. Bytes that no
+// pack writes any more get their ROM value back.
 void reload_files();
 
 // The JSON files refused by the last load, with the reason.

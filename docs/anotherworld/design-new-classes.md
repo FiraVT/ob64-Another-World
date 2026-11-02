@@ -383,6 +383,15 @@ are saved, and Change Class does not offer them, as with Dio's class.
   165 to 254 on first sight and keeps it (offline: a second start gives the
   same id). The MODS tab shows `New classes  n OF 90 IDS USED`, and a class
   refused because the ids ran out.
+- **The registry is kept safe** (2026-11-02, review AW-04). A new id is saved
+  before it is used: the file is written to `class-ids.json.tmp` and renamed
+  over the old one, so an interrupted write leaves the old file, and a write
+  that fails gives the class no id this session. A `class-ids.json` that
+  exists and cannot be read turns new classes off for the session and is left
+  as it is; the MODS tab shows `New classes  OFF: SAVES/CLASS-IDS.JSON IS NOT
+  READABLE`. Starting the ids again would let a save's class number name
+  another class. A repaired or removed file is read again when the mod files
+  next change.
 - **Lua:** `content.get/set` take a new class's key in place of its id;
   `content.class_id(key)`; `game.class_of(character)`; and
   `game.set_class(character, class)`, which writes the character record's

@@ -19,6 +19,7 @@
 #include <iterator>
 #include <map>
 #include <set>
+#include <stdexcept>
 #include <system_error>
 
 #include <librecomp/game.hpp>
@@ -260,6 +261,9 @@ bool g_move = true;
 bool g_move_filled = false;
 // New class key -> id, kept in saves/class-ids.json.
 std::map<std::string, uint16_t, std::less<>> g_class_ids;
+// Why no new class gets an id this session: class-ids.json exists and cannot
+// be read. The file is left as it is for the player to repair or remove.
+std::string g_class_ids_problem;
 std::vector<std::string> g_class_errors;
 
 uint8_t rd8(const uint8_t* rdram, uint32_t address) {
@@ -301,14 +305,25 @@ std::filesystem::path class_ids_path() {
     return host::pref_dir() / "saves" / "class-ids.json";
 }
 
+// Reads the registry. A missing file is a first start. A file that exists and
+// cannot be read stops new classes for the session (g_class_ids_problem):
+// starting the ids again would let a save's class number name another class.
 void read_class_ids() {
     g_class_ids.clear();
-    std::ifstream file(class_ids_path(), std::ios::binary);
-    if (!file) {
+    g_class_ids_problem.clear();
+    std::error_code ec;
+    if (!std::filesystem::exists(class_ids_path(), ec)) {
         return;
     }
+    std::ifstream file(class_ids_path(), std::ios::binary);
     try {
+        if (!file) {
+            throw std::runtime_error("cannot open it");
+        }
         const nlohmann::json root = nlohmann::json::parse(file);
+        if (!root.is_object()) {
+            throw std::runtime_error("not an object");
+        }
         for (const auto& [key, value] : root.items()) {
             if (is_class_key(key) && value.is_number_integer()) {
                 const int id = value.get<int>();
@@ -318,38 +333,72 @@ void read_class_ids() {
             }
         }
     } catch (const std::exception& e) {
-        std::fprintf(stderr, "[content] %s is not readable (%s); new class ids start again\n",
+        g_class_ids.clear();
+        g_class_ids_problem = "saves/class-ids.json is not readable; new classes are off";
+        std::fprintf(stderr, "[content] %s is not readable (%s); new classes are off until it is repaired or removed\n",
                      class_ids_path().string().c_str(), e.what());
     }
 }
 
-void write_class_ids() {
+// Writes the registry to a temporary file and renames it over the old one, so
+// an interrupted write leaves the old file. False when the file was not saved.
+bool write_class_ids() {
     nlohmann::ordered_json root = nlohmann::ordered_json::object();
     root["_comment"] = "New class ids, given once and kept: a save holds these numbers. Do not edit.";
     for (const auto& [key, id] : g_class_ids) {
         root[key] = id;
     }
+    const std::filesystem::path path = class_ids_path();
+    std::filesystem::path temporary = path;
+    temporary += ".tmp";
     std::error_code ec;
-    std::filesystem::create_directories(class_ids_path().parent_path(), ec);
-    std::ofstream(class_ids_path(), std::ios::binary) << root.dump(2) << "\n";
+    std::filesystem::create_directories(path.parent_path(), ec);
+    {
+        std::ofstream file(temporary, std::ios::binary | std::ios::trunc);
+        file << root.dump(2) << "\n";
+        file.flush();
+        if (!file) {
+            std::filesystem::remove(temporary, ec);
+            return false;
+        }
+    }
+    std::filesystem::rename(temporary, path, ec);
+    if (ec) {
+        std::filesystem::remove(temporary, ec);
+        return false;
+    }
+    return true;
 }
 
-// The id of a new class key, given out on first sight. nullopt when all 90
-// are taken.
-std::optional<uint16_t> allocate_class_id(const std::string& key) {
+// The id of a new class key, given out on first sight and saved before it is
+// used. nullopt, with `error`, when the registry is unreadable, all 83 ids are
+// taken, or the registry cannot be saved.
+std::optional<uint16_t> allocate_class_id(const std::string& key, std::string& error) {
+    if (!g_class_ids_problem.empty()) {
+        error = key + ": " + g_class_ids_problem;
+        return std::nullopt;
+    }
     if (const auto found = g_class_ids.find(key); found != g_class_ids.end()) {
         return found->second;
     }
     for (uint16_t id = FIRST_NEW_CLASS; id <= LAST_NEW_CLASS; id++) {
         const bool taken = std::any_of(g_class_ids.begin(), g_class_ids.end(),
                                        [id](const auto& entry) { return entry.second == id; });
-        if (!taken) {
-            g_class_ids[key] = id;
-            write_class_ids();
-            std::fprintf(stderr, "[content] new class %s gets id %u\n", key.c_str(), id);
-            return id;
+        if (taken) {
+            continue;
         }
+        g_class_ids[key] = id;
+        if (!write_class_ids()) {
+            g_class_ids.erase(key);
+            error = key + ": saves/class-ids.json cannot be saved";
+            std::fprintf(stderr, "[content] %s cannot be saved; new class %s gets no id\n",
+                         class_ids_path().string().c_str(), key.c_str());
+            return std::nullopt;
+        }
+        std::fprintf(stderr, "[content] new class %s gets id %u\n", key.c_str(), id);
+        return id;
     }
+    error = key + ": all 83 new class ids are taken";
     return std::nullopt;
 }
 
@@ -383,9 +432,10 @@ void apply_packs() {
         // New classes: an id, then the class record and the appearance row
         // copied from the class it starts from (as they stand so far).
         for (const NewClass& nc : g_packs[p].new_classes) {
-            const std::optional<uint16_t> id = allocate_class_id(nc.key);
+            std::string error;
+            const std::optional<uint16_t> id = allocate_class_id(nc.key, error);
             if (!id) {
-                g_class_errors.push_back(nc.key + ": all 83 new class ids are taken");
+                g_class_errors.push_back(error);
                 continue;
             }
             for (const Table table : {Table::Classes, Table::Appearances}) {
@@ -406,14 +456,24 @@ void apply_packs() {
         for (const Edit& keyed : g_packs[p].edits) {
             Edit edit_copy;
             const Edit* resolved = &keyed;
-            if (!keyed.key.empty()) {
-                const auto found = g_class_ids.find(keyed.key);
-                if (found == g_class_ids.end()) {
-                    g_class_errors.push_back(g_packs[p].id + ": no pack makes the class " + keyed.key);
-                    continue;
-                }
+            if (!keyed.key.empty() || !keyed.value_key.empty()) {
                 edit_copy = keyed;
-                edit_copy.id = found->second;
+                if (!keyed.key.empty()) {
+                    const auto found = g_class_ids.find(keyed.key);
+                    if (found == g_class_ids.end()) {
+                        g_class_errors.push_back(g_packs[p].id + ": no pack makes the class " + keyed.key);
+                        continue;
+                    }
+                    edit_copy.id = found->second;
+                }
+                if (!keyed.value_key.empty()) {
+                    const auto value = g_class_ids.find(keyed.value_key);
+                    if (value == g_class_ids.end() || keyed.bytes.size() != 1) {
+                        g_class_errors.push_back(g_packs[p].id + ": no pack makes the class " + keyed.value_key);
+                        continue;
+                    }
+                    edit_copy.bytes.assign(1, static_cast<uint8_t>(value->second));
+                }
                 resolved = &edit_copy;
             }
             const Edit& edit = *resolved;
@@ -778,6 +838,43 @@ bool Pack::set_field(Table table, uint16_t id, std::string_view name, int64_t va
     return true;
 }
 
+namespace {
+
+template <typename Entry, typename SameTarget>
+bool keep_one(std::vector<Entry>& list, SameTarget same_target) {
+    if (list.empty()) {
+        return false;
+    }
+    const Entry& added = list.back();
+    for (size_t i = 0; i + 1 < list.size(); i++) {
+        if (!same_target(list[i], added)) {
+            continue;
+        }
+        if (list[i].bytes == added.bytes) {
+            list.pop_back();
+            return false;
+        }
+        list.erase(list.begin() + static_cast<std::ptrdiff_t>(i));
+        return true;
+    }
+    return true;
+}
+
+}  // namespace
+
+bool Pack::keep_one_edit() {
+    return keep_one(edits, [](const Edit& a, const Edit& b) {
+        return a.table == b.table && a.id == b.id && a.offset == b.offset && a.mask == b.mask &&
+               a.bytes.size() == b.bytes.size() && a.key == b.key && a.value_key == b.value_key;
+    });
+}
+
+bool Pack::keep_one_name() {
+    return keep_one(names, [](const NameEdit& a, const NameEdit& b) {
+        return a.table == b.table && a.id == b.id && a.key == b.key;
+    });
+}
+
 std::span<const uint8_t> Record::bytes() const {
     return {bytes_, info(table_).stride};
 }
@@ -1030,6 +1127,11 @@ void reload_files() {
     if (!g_loaded) {
         return;
     }
+    // A registry that was not readable is read again, so a repaired or removed
+    // file turns new classes back on. A readable one stays as loaded.
+    if (!g_class_ids_problem.empty()) {
+        read_class_ids();
+    }
     read_files();
     apply_packs();
 }
@@ -1186,6 +1288,9 @@ std::vector<std::pair<std::string, std::string>> status() {
     }
     if (!g_class_ids.empty()) {
         lines.emplace_back("New classes", std::to_string(g_class_ids.size()) + " OF 83 IDS USED");
+    }
+    if (!g_class_ids_problem.empty()) {
+        lines.emplace_back("New classes", "OFF: SAVES/CLASS-IDS.JSON IS NOT READABLE");
     }
     for (const std::string& error : g_class_errors) {
         lines.emplace_back("New class", "REFUSED: " + error.substr(0, 60));

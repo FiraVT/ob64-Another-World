@@ -174,10 +174,10 @@ std::vector<Case> cases() {
         {"a malformed class key", R"({"classes":{"Bad Key!":{"copy_of":34}}})", false},
         {"a LordlyCaliber project with a version of the wrong type",
          R"({"format":"LordlyCaliberProject","version":"x"})", false},
-        {"a LordlyCaliber project with records of the wrong type",
-         R"({"format":"LordlyCaliberProject","version":1,"records":[1,2]})", false},
-        {"a LordlyCaliber name of the wrong type",
-         R"({"format":"LordlyCaliberProject","version":1,"itemNames":{"1":5}})", false},
+        // The record and name sections of the wrong type need the ROM's
+        // records to reach their checks (run_lordlycaliber_classes).
+        {"a LordlyCaliber project before the ROM's records are loaded",
+         R"({"format":"LordlyCaliberProject","version":1,"records":{}})", false},
     };
 }
 
@@ -691,11 +691,21 @@ int run_lordlycaliber_keys() {
     return failed;
 }
 
-// LordlyCaliber's "attacks" section (content_json.cpp
-// read_lordlycaliber_attacks) on a synthetic ROM: zeros, the revision 1 check
-// word (class 1's name pointer) and the five spell rows as the ROM holds them
-// (game_addresses.hpp kSpellMaps). Runs last: after it the database is loaded.
-int run_lordlycaliber_attacks() {
+std::filesystem::path class_ids_file() {
+    return ogre::host::pref_dir() / "saves" / "class-ids.json";
+}
+
+std::string read_text(const std::filesystem::path& path) {
+    std::ifstream file(path, std::ios::binary);
+    return std::string(std::istreambuf_iterator<char>(file), std::istreambuf_iterator<char>());
+}
+
+// Loads the database from the synthetic ROM. A class-ids.json that is not
+// JSON is in place first, for run_class_ids.
+bool load_synthetic_rom() {
+    std::error_code ec;
+    std::filesystem::remove_all(class_ids_file().string() + ".tmp", ec);
+    write(class_ids_file(), "{\"lc.a.class-165\": 172,");
     g_rom.assign(0x200000, 0);
     const auto put = [](uint32_t vram, std::initializer_list<uint8_t> bytes) {
         std::copy(bytes.begin(), bytes.end(), g_rom.begin() + (vram - 0x8016AF80u + 0x40E80u));
@@ -703,10 +713,183 @@ int run_lordlycaliber_attacks() {
     put(0x80187C34u + 0x48u, {0x80, 0x19, 0x03, 0x88});
     put(0x8018B48Cu, {0xFF, 55, 63, 71, 79, 87, 91, 0, 0xFF, 57, 65, 73, 81, 89, 93, 0, 0xFF, 59, 67, 75, 83, 87, 95,
                       0, 0xFF, 60, 68, 76, 84, 154, 96, 0, 146, 147, 148, 149, 150, 151, 152, 0});
-    if (!load()) {
-        std::printf("FAIL  the database loads the synthetic ROM\n");
-        return 1;
+    const bool pass = load();
+    std::printf("%s  the database loads the synthetic ROM\n", pass ? "pass" : "FAIL");
+    return pass;
+}
+
+Pack new_class_pack(const std::string& id, const std::string& key) {
+    Pack pack;
+    pack.id = id;
+    pack.new_classes.push_back(NewClass{key, 2});
+    return pack;
+}
+
+// saves/class-ids.json (content_db.cpp read_class_ids, write_class_ids). An
+// unreadable file stops new classes and is left as it is; a removed one starts
+// the ids; a registry that cannot be saved gives no id.
+int run_class_ids() {
+    int failed = 0;
+    const auto check = [&](const char* name, bool pass) {
+        failed += pass ? 0 : 1;
+        std::printf("%s  %s\n", pass ? "pass" : "FAIL", name);
+    };
+    const std::string damaged = read_text(class_ids_file());
+    add_pack(new_class_pack("test-locked", "test.locked"));
+    check("an unreadable class-ids.json gives a new class no id", !class_id("test.locked").has_value());
+    check("an unreadable class-ids.json is left as it is", read_text(class_ids_file()) == damaged);
+    const auto lines = status();
+    check("the MODS tab says new classes are off", std::any_of(lines.begin(), lines.end(), [](const auto& line) {
+              return line.second.find("CLASS-IDS.JSON IS NOT READABLE") != std::string::npos;
+          }));
+    std::error_code ec;
+    std::filesystem::remove(class_ids_file(), ec);
+    reload_files();
+    check("a removed class-ids.json turns new classes back on", class_id("test.locked").has_value());
+    check("the new id is saved", read_text(class_ids_file()).find("\"test.locked\"") != std::string::npos);
+    // A directory where the temporary file goes makes the write fail.
+    std::filesystem::create_directories(class_ids_file().string() + ".tmp", ec);
+    add_pack(new_class_pack("test-unsaved", "test.unsaved"));
+    check("a class-ids.json that cannot be saved gives a new class no id", !class_id("test.unsaved").has_value());
+    check("a failed save keeps the file", read_text(class_ids_file()).find("test.unsaved") == std::string::npos &&
+                                              read_text(class_ids_file()).find("test.locked") != std::string::npos);
+    std::filesystem::remove_all(class_ids_file().string() + ".tmp", ec);
+    return failed;
+}
+
+// The class and attack ids inside a LordlyCaliber project's class records
+// (content_json.cpp translate_class_ids), and record and name sections of the
+// wrong type, which only reach their checks with the ROM's records loaded.
+int run_lordlycaliber_classes() {
+    int failed = 0;
+    const auto check = [&](const char* name, bool pass, const std::string& error = {}) {
+        failed += pass ? 0 : 1;
+        std::printf("%s  %s%s%s\n", pass ? "pass" : "FAIL", name, error.empty() ? "" : ": ", error.substr(0, 80).c_str());
+    };
+    const auto refused_with = [&](const char* name, const std::string& text, const std::string& reason) {
+        std::string error;
+        const bool refused = !parse_pack(text, "user-content/test/project.json", error).has_value();
+        check(name, refused && error.find(reason) != std::string::npos, error);
+    };
+    refused_with("a LordlyCaliber project with records of the wrong type",
+                 R"({"format":"LordlyCaliberProject","version":1,"records":[1,2]})", "\"records\" is not an object");
+    refused_with("a LordlyCaliber name of the wrong type",
+                 R"({"format":"LordlyCaliberProject","version":1,"itemNames":{"1":5}})", "itemNames 1: not an id");
+    {
+        std::string error;
+        const bool accepted =
+            parse_pack(R"({"format":"LordlyCaliberProject","version":1,"records":{}})", "user-content/test/project.json",
+                       error)
+                .has_value();
+        check("a LordlyCaliber project with no records is accepted", accepted, error);
     }
+    // Two added classes on the synthetic ROM's zero records. Class 165 links
+    // its key (+0x45) to class 166, its base class (+0x41) to 200, which the
+    // project does not add, and its front attack (+0x37) to added attack 159.
+    // Retail class 5 links its key to class 165.
+    const auto record = [](std::initializer_list<std::pair<int, uint8_t>> bytes) {
+        std::vector<uint8_t> r(0x48, 0);
+        r[0x30] = 0x11;  // a byte that differs from every zero record
+        for (const auto& [offset, value] : bytes) {
+            r[static_cast<size_t>(offset)] = value;
+        }
+        static const char* digits = "0123456789abcdef";
+        std::string hex;
+        for (const uint8_t b : r) {
+            hex += digits[b >> 4];
+            hex += digits[b & 15];
+        }
+        return hex;
+    };
+    const std::string pack_id = "user-content/lc-review/project.json";
+    const std::string text = R"({"format":"LordlyCaliberProject","version":1,"addedClasses":[{"record":")" +
+                             record({{0x45, 166}, {0x41, 200}, {0x37, 159}, {0x39, 0xFF}}) + R"("},{"record":")" +
+                             record({}) + R"("}],"records":{"classes":{"5":")" + record({{0x45, 165}}) + R"("}}})";
+    std::string error;
+    const std::optional<Pack> pack = parse_pack(text, pack_id, error);
+    check("a LordlyCaliber project with linked added classes is accepted", pack.has_value(), error);
+    if (!pack) {
+        return failed;
+    }
+    const std::string a = lordlycaliber_class_key(pack_id, 165);
+    const std::string b = lordlycaliber_class_key(pack_id, 166);
+    const auto byte_at = [&](const std::string& key, uint16_t id, uint16_t offset) -> const Edit* {
+        for (const Edit& e : pack->edits) {
+            if (e.table == Table::Classes && e.key == key && (!key.empty() || e.id == id) && offset >= e.offset &&
+                offset < e.offset + e.bytes.size()) {
+                return &e;
+            }
+        }
+        return nullptr;
+    };
+    const auto lists = [&](std::string_view what) {
+        return std::any_of(pack->not_applied.begin(), pack->not_applied.end(),
+                           [&](const std::string& s) { return s.find(what) != std::string::npos; });
+    };
+    const Edit* link = byte_at(a, 0, 0x45);
+    check("an added class's link to an added class is on that class's key",
+          link != nullptr && link->value_key == b && link->bytes.size() == 1);
+    const Edit* retail = byte_at({}, 5, 0x45);
+    check("a retail class's link to an added class is on that class's key",
+          retail != nullptr && retail->value_key == a);
+    check("a link to a class the project does not add is left out",
+          byte_at(a, 0, 0x41) == nullptr && lists("1 class links to classes the project does not add"));
+    check("a row attack that is an added attack is left out",
+          byte_at(a, 0, 0x37) == nullptr && lists("1 class row attacks that are added attacks"));
+    const Edit* none = byte_at(a, 0, 0x39);
+    check("a row attack of none (0xFF) is kept",
+          none != nullptr && none->value_key.empty() && none->bytes[0x39 - none->offset] == 0xFF);
+    add_pack(*pack);
+    const std::optional<uint16_t> id_a = class_id(a);
+    const std::optional<uint16_t> id_b = class_id(b);
+    check("both added classes get ids", id_a.has_value() && id_b.has_value());
+    if (id_a && id_b) {
+        check("the added class's key byte is the other class's id",
+              current(Table::Classes, *id_a).bytes()[0x45] == *id_b);
+        check("retail class 5's key byte is the added class's id", current(Table::Classes, 5).bytes()[0x45] == *id_a);
+        check("the base class byte keeps the record's starting value",
+              current(Table::Classes, *id_a).bytes()[0x41] == original(Table::Classes, 0).bytes()[0x41]);
+    }
+    return failed;
+}
+
+// A script's writes (Pack::keep_one_edit, keep_one_name; lua_runtime.cpp
+// content.set): 600 writes of one field leave one edit.
+int run_keep_one() {
+    int failed = 0;
+    const auto check = [&](const char* name, bool pass) {
+        failed += pass ? 0 : 1;
+        std::printf("%s  %s\n", pass ? "pass" : "FAIL", name);
+    };
+    Pack pack;
+    int changes = 0;
+    for (int i = 0; i < 600; i++) {
+        pack.set_field(Table::Classes, 2, "str_base", 40);
+        changes += pack.keep_one_edit() ? 1 : 0;
+    }
+    check("600 writes of one value leave one edit and one change", pack.edits.size() == 1 && changes == 1);
+    pack.set_field(Table::Classes, 2, "vit_base", 30);
+    pack.keep_one_edit();
+    pack.set_field(Table::Classes, 2, "str_base", 41);
+    check("a new value replaces the field's edit", pack.keep_one_edit() && pack.edits.size() == 2 &&
+                                                       pack.edits.back().bytes == std::vector<uint8_t>{0, 41});
+    pack.set_field(Table::Classes, 3, "str_base", 41);
+    check("the same field of another record is its own edit", pack.keep_one_edit() && pack.edits.size() == 3);
+    std::string error;
+    int renames = 0;
+    for (int i = 0; i < 100; i++) {
+        pack.set_name(Table::Classes, 2, i < 50 ? "Knight" : "Paladin", error);
+        renames += pack.keep_one_name() ? 1 : 0;
+    }
+    check("100 renames to two names leave one name and two changes", pack.names.size() == 1 && renames == 2);
+    return failed;
+}
+
+// LordlyCaliber's "attacks" section (content_json.cpp
+// read_lordlycaliber_attacks) on a synthetic ROM: zeros, the revision 1 check
+// word (class 1's name pointer) and the five spell rows as the ROM holds them
+// (game_addresses.hpp kSpellMaps), which load_synthetic_rom loads.
+int run_lordlycaliber_attacks() {
     // Entries from attack 1; `at` puts an entry at an attack id, the rest are
     // the synthetic ROM's records (12 zero bytes).
     const auto project = [](std::initializer_list<std::pair<int, std::string>> at, int count = 158) {
@@ -884,7 +1067,14 @@ int main(int argc, char** argv) {
         failed += pass ? 0 : 1;
         std::printf("%s  game API: %s is %s\n", pass ? "pass" : "FAIL", r.name, r.accept ? "accepted" : "refused");
     }
-    failed += run_lordlycaliber_attacks();
+    failed += run_keep_one();
+    if (load_synthetic_rom()) {
+        failed += run_class_ids();
+        failed += run_lordlycaliber_attacks();
+        failed += run_lordlycaliber_classes();
+    } else {
+        failed++;
+    }
     std::printf("Content pack hostile-file test: %d failed\n", failed);
     return failed == 0 ? 0 : 1;
 }

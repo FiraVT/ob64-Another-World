@@ -123,7 +123,11 @@ should not go.
   (the free new class ids), each `record` exactly one class record (72 bytes)
   and each `name` a name in the game's encoding with the same limits. Each
   becomes a new class with a generated key, so its record goes only into the
-  arena copy, as a JSON pack's new class does.
+  arena copy, as a JSON pack's new class does. A class link or row attack
+  inside a class record that names an id the port does not have is left out
+  and listed (`translate_class_ids`, `design-lordlycaliber-import.md`
+  section 5), so an imported record never points past the class or attack
+  table.
 - **LordlyCaliber attacks** (`read_lordlycaliber_attacks`,
   `design-lordlycaliber-import.md` section 4.1). The section must be version
   1 with at most 254 entries. Each entry's `data` is exactly 12 bytes of hex
@@ -243,9 +247,18 @@ build; if a case fails, the build fails.
   names, an unknown table, and LordlyCaliber projects with fields of the wrong
   type. Keys for the classes a LordlyCaliber project adds
   (`lordlycaliber_class_key`) are checked to be valid class keys of at most 64
-  characters for odd folder names. Last, on a synthetic ROM image, twenty
-  LordlyCaliber `attacks` cases: ten accepted projects whose edits and
-  `not_applied` lines are checked, and the ten refusals in section 2.
+  characters for odd folder names. Four cases check that a script's pack keeps
+  one edit per field (600 writes of one value leave one edit). Last, on a
+  synthetic ROM image: six `saves/class-ids.json` cases (an unreadable file
+  gives no id and is left as it is, a removed one turns new classes back on,
+  a failed save gives no id and keeps the file); twenty LordlyCaliber
+  `attacks` cases: ten accepted projects whose edits and `not_applied` lines
+  are checked, and the ten refusals in section 2; and thirteen LordlyCaliber
+  class cases: `records` and `itemNames` of the wrong type refused with the
+  error of their own check (without the ROM's records the importer stops
+  earlier, so these two cases did not reach their checks before 2026-11-02,
+  review AW-06), and class links and row attacks translated, left out or
+  kept, read back from the applied database.
 
 The tests found two holes while they were written (2026-10-31): a finalizer
 with an endless loop hung the test, because Lua runs finalizers with hooks off,

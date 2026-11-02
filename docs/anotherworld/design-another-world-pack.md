@@ -310,3 +310,19 @@ leaves 30 / 0) with no reload; a loose script's `options.get` raises an error;
 a player's mod reads its own number option (4) and cannot read the pack's.
 Scenario `aw-pack-battle` passes (a played battle, shared EXP logged, no
 script error). The options rows were not seen on screen (section 12).
+
+## 14. The other review findings (2026-11-02)
+
+The external review of v0.2.0 (2026-11-01) listed six findings. AW-01 and
+AW-03 are fixed in sections 8 and 10. The other four were checked against the
+code of `43aca3e` first, held as described, and are fixed:
+
+| id | checked in the code | fix | test |
+|---|---|---|---|
+| AW-02 | `parse_lordlycaliber` copied class records whole; `+0x41`, `+0x43`, `+0x45` kept LordlyCaliber's ids 165 and up, and `+0x37`, `+0x39`, `+0x3B` could name attacks 159 and up | `translate_class_ids`: links to added classes become `Edit::value_key`, resolved when packs apply; other ids past the tables are left out and listed (`design-lordlycaliber-import.md` section 5) | 10 cases on the synthetic ROM, read back from the applied database; with the call removed for one build (tag `probe-aw02`, restored, `grep` empty) 7 of them fail |
+| AW-04 | `write_class_ids` wrote in place and ignored a failure; `read_class_ids` started the ids again on a file it could not parse | write to `.tmp` and rename; a failed save gives no id; an unreadable file turns new classes off and is left as it is (`design-new-classes.md`) | 6 cases: a damaged file, its removal, a write blocked by a directory at `class-ids.json.tmp` |
+| AW-05 | `Pack::set_field` appended on every call and `content.set` marked the pack dirty every time | `Pack::keep_one_edit` and `keep_one_name`; dirty only on a change (`design-lua.md` section 6) | 4 cases: 600 writes of one value leave 1 edit and 1 change |
+| AW-06 | the `records` and `itemNames` cases ran before any ROM and stopped at "no ROM records" | moved to the synthetic ROM, each checked for its own error text; the no-ROM case is kept under its own name | the two cases and an accepted control |
+
+Not done: a played import of a real LordlyCaliber project with linked
+classes, and a battle with an imported class.

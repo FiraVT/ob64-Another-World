@@ -194,6 +194,17 @@ Steps 2 and 3 are the port side of ecosystem phase G for classes. Steps 4 and
 - `records.classes` and `classNames` entries for an added id go to its key.
   Any other id past 164 is counted as before. An added record of the wrong
   size is now refused like any other record.
+- Class ids inside class records (2026-11-02, review AW-02;
+  `translate_class_ids`). A class link (`base_class` `+0x41`,
+  `intermediate_class` `+0x43`, `key` `+0x45`) to an added class becomes a
+  one-byte edit whose value is that class's key (`Edit::value_key`), resolved
+  to its port id when the packs apply. This covers added and retail records.
+  A link to a class id past 164 that the project does not add, and a row
+  attack (`+0x37`, `+0x39`, `+0x3B`) of 159 or more (an added attack, which
+  the port does not apply), are left out, so the record keeps the value it
+  starts with, and listed in `not_applied`. `0xFF` is "none" in all six
+  fields (every retail class record holds only ids in range or `0xFF`) and is
+  kept.
 - Refusals: `addedClasses` that is not an array, more than 83 entries, an
   entry that is not an object, a `record` that is not 72 bytes of hex, and a
   `name` the name rules refuse.

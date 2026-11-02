@@ -114,7 +114,11 @@ after its call, because adding to the list can move it (review AW-01,
 
 The game events run on the game thread and `frame` on the main thread. One
 recursive mutex guards the Lua state. `content.set` changes the script's pack
-in memory; `lua::tick` publishes changed packs on the main thread with
+in memory. The pack keeps one edit per field and one name per record
+(`Pack::keep_one_edit`, `keep_one_name`), and a write of the value the pack
+already holds does not mark it changed, so a script that writes every frame
+neither grows the pack nor republishes it (review AW-05, 2026-11-02).
+`lua::tick` publishes changed packs on the main thread with
 `content::set_runtime_pack`. `content.get` takes the database's
 `records_mutex()`, which `apply_packs` holds, so a read from the game thread
 never sees a half-applied pack. The lock order is always the Lua lock, then the

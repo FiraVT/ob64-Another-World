@@ -246,6 +246,10 @@ int api_content_get(lua_State* state) {
     return 1;
 }
 
+// A script's pack keeps one edit per field and one name per record
+// (Pack::keep_one_edit), and a write of the value it already holds does not
+// mark it dirty, so a script that writes every frame neither grows the pack
+// nor republishes it.
 int api_content_set(lua_State* state) {
     const content::Table table = check_table(state, 1);
     const uint16_t id = check_id(state, 2, table);
@@ -256,14 +260,21 @@ int api_content_set(lua_State* state) {
         if (!script.pack.set_name(table, id, luaL_checkstring(state, 4), error)) {
             luaL_argerror(state, 4, error.c_str());
         }
-    } else if (content::field(table, field) == nullptr) {
+        if (script.pack.keep_one_name()) {
+            script.dirty = true;
+        }
+        return 0;
+    }
+    if (content::field(table, field) == nullptr) {
         luaL_argerror(state, 3, "unknown field");
     } else if (table == content::Table::Spells && !content::spell_target(luaL_checkinteger(state, 4))) {
         luaL_argerror(state, 4, "an attack 1..158 that is not a generic magic attack (45..54, 145)");
     } else if (!script.pack.set_field(table, id, field, luaL_checkinteger(state, 4))) {
         luaL_argerror(state, 4, "the value does not fit the field");
     }
-    script.dirty = true;
+    if (script.pack.keep_one_edit()) {
+        script.dirty = true;
+    }
     return 0;
 }
 
