@@ -49,6 +49,10 @@ void overlay_open_tab(int tab);
 void field_pause(bool on);
 bool field_paused();
 
+// True while the game is held on purpose: the Esc menu's pause or PAUSE ON
+// SELECT. The hang watcher (hang_watch.cpp) does not count that time.
+bool game_paused();
+
 // True while the overlay is up. Read from the game thread's input poll, so it is
 // a plain atomic flag.
 bool overlay_visible();

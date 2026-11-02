@@ -4,6 +4,7 @@
 #include "war_director.hpp"
 #include "game_events.hpp"
 #include "alerts.hpp"
+#include "class_rebalance.hpp"
 #include "content_db.hpp"
 
 #include <algorithm>
@@ -1942,12 +1943,12 @@ bool air_unit(const uint8_t* rdram, const Template& t) {
     return true;
 }
 
-// The places one member takes: 1, or 2 for a large class under LARGE UNITS =
-// VANILLA. With ONE SQUARE (the default) a large member takes one place for the
-// enemy as for the player, so a leader with four dragons fits.
+// The places one member takes: 1, or for a large class the unit_size filter's
+// answer (class_rebalance.hpp), 2 without a rule. The Another World mod pack
+// makes it 1 for the enemy as for the player, so a leader with four dragons
+// fits.
 int place_cost(const uint8_t* rdram, int cls) {
-    const bool one_square = choice_index(Choice::LargeUnits) == 0;
-    return is_large(rdram, cls) && !one_square ? 2 : 1;
+    return is_large(rdram, cls) ? class_rebalance::unit_places(2) : 1;
 }
 
 int places(const uint8_t* rdram, int cls, int count) {

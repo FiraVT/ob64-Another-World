@@ -82,7 +82,7 @@ R0 progress (2026-10-31): built are the content database, JSON packs that
 reload while the game runs, LordlyCaliber import of records and names, names,
 the battle reward table, runtime packs (`design-content-database.md`), and the
 Lua runtime (`design-lua.md`). The class rebalance is the first pack,
-`app/content/class-rebalance.json`. Both "done when" cases work offline: a
+`app/content/another-world/class-rebalance.json`. Both "done when" cases work offline: a
 LordlyCaliber project's edited sword applies, and a Lua script changes a drop
 (`app/content/examples/drops.lua`); neither has been played yet. The MODS tab
 lists the packs, scripts, refused files and conflicts, in the game's Esc menu

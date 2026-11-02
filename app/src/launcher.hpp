@@ -26,9 +26,9 @@ std::filesystem::path executable_directory();
 
 // The runtime config directory. `OGRE_PREF_DIR` still wins (test harnesses use
 // it); otherwise a distributable build keeps everything in its own folder — the
-// executable's directory — so the save file lands right beside the app. If that
-// directory is not writable (a read-only install location), the platform
-// preference directory is used instead.
+// executable's directory — so the save file lands right beside the app. The
+// platform preference directory (%APPDATA% and the like) is never used; a
+// read-only executable directory only prints a warning.
 std::filesystem::path resolve_pref_dir();
 
 // The N64 dumps sitting in `<exe dir>/roms/` (the package ships that folder

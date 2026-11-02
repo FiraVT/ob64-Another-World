@@ -254,9 +254,11 @@ list (`content_json.cpp`, `read_battle_forms`):
   new class key), or a list of 1..32 classes: each strike draws one at random,
   never the fighter's previous form when the list has another. Without it the
   strike keeps the class. `attack` is the attack id (0..158;
-  `content-dump/attacks.json` lists them), or `"breath"`: the form's breath
-  attack (the first attack of kind 5 in its rows, front first), from any row.
-  Without it the strike uses the form's attack for the fighter's row.
+  `content-dump/attacks.json` lists them), a list of 1..32 attack ids (each
+  strike draws one at random, never the fighter's previous pick when the list
+  has another), or `"breath"`: the form's breath attack (the first attack of
+  kind 5 in its rows, front first), from any row. Without it the strike uses
+  the form's attack for the fighter's row.
 - `attacks`: optional, 1..9, the fighter's strikes in a battle, replacing its
   class's count.
 - `repeat`: optional, `true` makes strike `i` use `strikes[i % n]`, so a rule
@@ -480,5 +482,6 @@ question 5).
    the class word only when it equals the key. The round reset now gives a
    fighter with a rule and key 0 its class as key, as standard classes have
    it; the record is not touched.
-2. A hand play test of the example mods.
+2. A hand play test of the example mods, and of a random attack list (added
+   2026-11-01, not played).
 3. Hook `func_ovlC_801C3770`'s miss (section 7.1).

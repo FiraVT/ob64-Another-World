@@ -131,7 +131,8 @@ bool read_battle_class(const json& value, int& id, std::string& key, std::string
 // The "battle_forms" list (design-battle-transform.md section 6): rules of
 // "class", "strikes" (1..9 objects of "form" and "attack", both optional),
 // "attacks" (1..9, optional) and "repeat" (a boolean, optional). A "form" is a
-// class or a list of 1..32 classes; an "attack" is an attack id or "breath".
+// class or a list of 1..32 classes; an "attack" is an attack id, a list of
+// 1..32 attack ids or "breath".
 bool read_battle_forms(const json& list, Pack& pack, std::string& error) {
     if (!list.is_array()) {
         error = "expected a list of rules";
@@ -212,7 +213,6 @@ bool read_battle_forms(const json& list, Pack& pack, std::string& error) {
                     }
                     continue;
                 }
-                int64_t number = 0;
                 if (key != "attack") {
                     error = at + ": " + key + ": not a field (form, attack)";
                     return false;
@@ -221,12 +221,22 @@ bool read_battle_forms(const json& list, Pack& pack, std::string& error) {
                     strike.breath = true;
                     continue;
                 }
-                if (!parse_value(value, number) || number < 0 || number >= info(Table::Attacks).count) {
-                    error = at + ": attack: an attack id (0.." + std::to_string(info(Table::Attacks).count - 1) +
-                            ") or \"breath\"";
+                const bool list = value.is_array();
+                const std::string expected = "an attack id (0.." + std::to_string(info(Table::Attacks).count - 1) +
+                                             "), a list of 1.." + std::to_string(kMaxBattleAttacks) +
+                                             " attack ids or \"breath\"";
+                if (list && (value.empty() || value.size() > static_cast<size_t>(kMaxBattleAttacks))) {
+                    error = at + ": attack: " + expected;
                     return false;
                 }
-                strike.attack = static_cast<int>(number);
+                for (const json& entry : list ? value : json::array({value})) {
+                    int64_t number = 0;
+                    if (!parse_value(entry, number) || number < 0 || number >= info(Table::Attacks).count) {
+                        error = at + ": attack: " + expected;
+                        return false;
+                    }
+                    strike.attacks.push_back(static_cast<int>(number));
+                }
             }
             form.strikes.push_back(std::move(strike));
         }
@@ -268,6 +278,191 @@ bool read_art(const json& block, NewClass& nc, std::string& error) {
             return false;
         }
         *slot = value.get<std::string>();
+    }
+    return true;
+}
+
+// LordlyCaliber's "attacks" section (native/engine/attack_data.cpp,
+// AttackData::json, read at v0.5.45 on 2026-11-01): {"version": 1, "entries":
+// [...]}, every attack from id 1. An entry holds "data" (the record's 12 bytes
+// after the name pointer, hex), "name" (hex, the game's encoding),
+// "dynamicName" (true: the ROM's empty name, which the battle fills per
+// element), "spellLinks" ({"<attack the generic attack resolves to>": <attack
+// to use instead>}) and the settings LordlyCaliber's own ROM hooks read.
+// Applied: "data" as record edits, "name", and the spellLinks of attacks
+// 45..48 and 145 for the element slots the spells table holds. Listed in
+// not_applied: added attacks (ids past 158), the other spellLinks, settings
+// that differ from LordlyCaliber's retail values (struct Attack), and edited
+// visuals (AttackVisual::modified).
+template <typename EditChanged>
+bool read_lordlycaliber_attacks(const json& section, Pack& pack, const EditChanged& edit_changed, std::string& error) {
+    const auto version = section.is_object() ? section.find("version") : section.end();
+    if (!section.is_object() || version == section.end() || !version->is_number_integer() || *version != 1) {
+        error = "only version 1 is supported";
+        return false;
+    }
+    const auto entries = section.find("entries");
+    // LordlyCaliber's maximumCount is 255 ids, id 0 not listed.
+    constexpr size_t MAX_ENTRIES = 254;
+    if (entries == section.end() || !entries->is_array() || entries->size() > MAX_ENTRIES) {
+        error = "\"entries\" must be an array of at most " + std::to_string(MAX_ENTRIES) + " attacks";
+        return false;
+    }
+    // The settings and LordlyCaliber's retail value; -1 for behavior and
+    // animation stands for the attack's own id.
+    constexpr std::pair<const char*, int> SETTINGS[] = {
+        {"behavior", -1},    {"animation", -1},   {"targetPattern", 0}, {"targetSide", 0}, {"targetMask", 0},
+        {"playback", 0},     {"powerPercent", 100}, {"status", -1},     {"condition", 1},  {"chance", 100},
+        {"afterEffect", -1}, {"afterBasis", 0},   {"afterPercent", 100},
+    };
+    const TableInfo& attacks = info(Table::Attacks);
+    const std::span<const Field> elements = fields(Table::Spells);
+    int added = 0;
+    int dynamic_names = 0;
+    int long_names = 0;
+    int skipped_links = 0;
+    int visuals = 0;
+    std::vector<std::string> changed_settings;  // the setting names, once each
+    std::vector<int> set_attacks;               // attacks with a changed setting
+    for (size_t i = 0; i < entries->size(); i++) {
+        const json& entry = (*entries)[i];
+        const int id = static_cast<int>(i) + 1;
+        const std::string where = "entry " + std::to_string(i) + " (attack " + std::to_string(id) + ")";
+        if (!entry.is_object()) {
+            error = where + ": not an object";
+            return false;
+        }
+        std::vector<uint8_t> data;
+        const auto data_hex = entry.find("data");
+        if (data_hex == entry.end() || !data_hex->is_string() || !parse_hex(data_hex->get<std::string>(), data) ||
+            data.size() != attacks.stride - 4) {
+            error = where + ": \"data\" must be " + std::to_string(attacks.stride - 4) + " bytes of hex";
+            return false;
+        }
+        std::vector<uint8_t> name;
+        const auto name_hex = entry.find("name");
+        const bool has_name = name_hex != entry.end() && !name_hex->is_null();
+        if (has_name && (!name_hex->is_string() || !parse_hex(name_hex->get<std::string>(), name) || name.empty() ||
+                         name.size() > 128)) {
+            error = where + ": \"name\" must be 1..128 bytes of hex";
+            return false;
+        }
+        bool dynamic = false;
+        if (const auto flag = entry.find("dynamicName"); flag != entry.end() && !flag->is_null()) {
+            if (!flag->is_boolean()) {
+                error = where + ": \"dynamicName\" must be true or false";
+                return false;
+            }
+            dynamic = flag->get<bool>();
+        }
+        bool settings_changed = false;
+        int behavior = id;
+        for (const auto& [key, retail] : SETTINGS) {
+            const auto value = entry.find(key);
+            if (value == entry.end() || value->is_null()) {
+                continue;
+            }
+            if (!value->is_number_integer()) {
+                error = where + ": \"" + key + "\" must be an integer";
+                return false;
+            }
+            const int64_t number = value->get<int64_t>();
+            if (std::string_view(key) == "behavior") {
+                behavior = static_cast<int>(std::clamp<int64_t>(number, -1, 0xFFFF));
+            }
+            if (number != (retail == -1 && (std::string_view(key) == "behavior" || std::string_view(key) == "animation")
+                               ? id
+                               : retail)) {
+                settings_changed = true;
+                if (std::find(changed_settings.begin(), changed_settings.end(), key) == changed_settings.end()) {
+                    changed_settings.push_back(key);
+                }
+            }
+        }
+        if (const auto visual = entry.find("visual"); visual != entry.end() && visual->is_object()) {
+            const auto native = visual->find("nativeEffect");
+            const auto delay = visual->find("delay");
+            visuals += (native != visual->end() && *native != -1) || (delay != visual->end() && *delay != 0) ||
+                               visual->contains("frames") || visual->contains("retailEdits")
+                           ? 1
+                           : 0;
+        }
+        const auto links = entry.find("spellLinks");
+        const bool has_links = links != entry.end() && !links->is_null();
+        if (has_links && !links->is_object()) {
+            error = where + ": \"spellLinks\" must be an object";
+            return false;
+        }
+        if (id >= attacks.count) {
+            added++;
+            continue;
+        }
+        const uint16_t rid = static_cast<uint16_t>(id);
+        if (settings_changed) {
+            set_attacks.push_back(id);
+        }
+        std::vector<uint8_t> record(original(Table::Attacks, rid).bytes().begin(),
+                                    original(Table::Attacks, rid).bytes().end());
+        std::copy(data.begin(), data.end(), record.begin() + 4);
+        edit_changed(Table::Attacks, rid, record);
+        const std::vector<uint8_t> rom_name = original_name(Table::Attacks, rid);
+        if (dynamic) {
+            dynamic_names += rom_name.empty() ? 0 : 1;
+        } else if (has_name && name != rom_name && !pack.set_name_bytes(Table::Attacks, rid, name)) {
+            long_names++;
+        }
+        if (!has_links) {
+            continue;
+        }
+        // The spells row of this attack, when its links resolve through its
+        // own row (LordlyCaliber resolves through the behavior's template).
+        int row = -1;
+        for (size_t r = 0; r < kSpellRowAttacks.size(); r++) {
+            row = kSpellRowAttacks[r] == id && behavior == id ? static_cast<int>(r) : row;
+        }
+        for (const auto& [from_text, to] : links->items()) {
+            int64_t from = 0;
+            if (!parse_number(from_text, from) || !to.is_number_integer()) {
+                error = where + ": spellLinks " + from_text + ": not an attack id and an attack id";
+                return false;
+            }
+            // Attacks 45..48 read elements 1..6 of their row; 145 reads 0..6.
+            bool matched = false;
+            for (size_t slot = id == 145 ? 0 : 1; row >= 0 && slot < elements.size(); slot++) {
+                if (original(Table::Spells, static_cast<uint16_t>(row)).u8(static_cast<uint16_t>(slot)) != from) {
+                    continue;
+                }
+                matched = pack.set_field(Table::Spells, static_cast<uint16_t>(row), elements[slot].name,
+                                         to.get<int64_t>());
+                if (!matched) {
+                    break;
+                }
+            }
+            skipped_links += matched ? 0 : 1;
+        }
+    }
+    if (added > 0) {
+        pack.not_applied.push_back(std::to_string(added) + " added attacks");
+    }
+    if (!set_attacks.empty()) {
+        std::string list;
+        for (const std::string& key : changed_settings) {
+            list += (list.empty() ? "" : ", ") + key;
+        }
+        pack.not_applied.push_back("attack settings (" + list + ") of " + std::to_string(set_attacks.size()) +
+                                   " attacks");
+    }
+    if (skipped_links > 0) {
+        pack.not_applied.push_back(std::to_string(skipped_links) + " spell array entries with no spells field");
+    }
+    if (visuals > 0) {
+        pack.not_applied.push_back("edited visuals of " + std::to_string(visuals) + " attacks");
+    }
+    if (dynamic_names > 0) {
+        pack.not_applied.push_back(std::to_string(dynamic_names) + " attack names made per-element");
+    }
+    if (long_names > 0) {
+        pack.not_applied.push_back(std::to_string(long_names) + " attack names longer than the port's name rules");
     }
     return true;
 }
@@ -375,6 +570,24 @@ std::optional<Pack> parse_lordlycaliber(const json& root, Pack pack, std::string
             pack.not_applied.push_back("descriptions of " + std::to_string(descriptions) + " added classes");
         }
     }
+    // One edit per run of bytes after the name pointer that differ from the
+    // ROM's record.
+    const auto edit_changed = [&](Table table, uint16_t rid, std::span<const uint8_t> bytes) {
+        const std::span<const uint8_t> rom = original(table, rid).bytes();
+        const uint16_t stride = static_cast<uint16_t>(info(table).stride);
+        for (uint16_t i = NAME_POINTER; i < stride;) {
+            if (bytes[i] == rom[i]) {
+                i++;
+                continue;
+            }
+            uint16_t end = i;
+            while (end < stride && bytes[end] != rom[end]) {
+                end++;
+            }
+            pack.set_bytes(table, rid, i, bytes.subspan(i, end - i));
+            i = end;
+        }
+    };
     // The key of an added class id, or null for any other id.
     const auto added_key = [&](int64_t id) -> const std::string* {
         const int64_t index = id - class_table.count;
@@ -422,21 +635,7 @@ std::optional<Pack> parse_lordlycaliber(const json& root, Pack pack, std::string
                     pack.edits.back().key = *key;
                     continue;
                 }
-                const uint16_t rid = static_cast<uint16_t>(record_id);
-                const std::span<const uint8_t> rom = original(*table, rid).bytes();
-                // One edit per run of changed bytes.
-                for (uint16_t i = NAME_POINTER; i < t.stride;) {
-                    if (bytes[i] == rom[i]) {
-                        i++;
-                        continue;
-                    }
-                    uint16_t end = i;
-                    while (end < t.stride && bytes[end] != rom[end]) {
-                        end++;
-                    }
-                    pack.set_bytes(*table, rid, i, std::span<const uint8_t>(bytes).subspan(i, end - i));
-                    i = end;
-                }
+                edit_changed(*table, static_cast<uint16_t>(record_id), bytes);
             }
             if (added > 0) {
                 pack.not_applied.push_back(std::to_string(added) + " added " + table_name);
@@ -485,11 +684,18 @@ std::optional<Pack> parse_lordlycaliber(const json& root, Pack pack, std::string
             pack.not_applied.push_back(std::to_string(added) + " names of added " + info(table).name);
         }
     }
+    if (const auto attacks = root.find("attacks"); attacks != root.end() && !attacks->is_null()) {
+        if (!read_lordlycaliber_attacks(*attacks, pack, edit_changed, error)) {
+            error = "attacks: " + error;
+            return std::nullopt;
+        }
+    }
     // Every other section with content is listed, never dropped silently
     // (design-ecosystem.md section 5).
     for (const auto& [key, value] : root.items()) {
         if (key == "format" || key == "version" || key == "sourceSha256" || key == "sourcePath" ||
-            key == "records" || key == "addedClasses" || key == "classNames" || key == "itemNames" || value.is_null() ||
+            key == "records" || key == "addedClasses" || key == "classNames" || key == "itemNames" || key == "attacks" ||
+            value.is_null() ||
             ((value.is_object() || value.is_array()) && value.empty())) {
             continue;
         }
@@ -537,6 +743,9 @@ std::string dump_table(Table table) {
             if (std::string_view(f.name) != "name_ptr") {
                 fields[f.name] = *record.get(f.name);
             }
+        }
+        if (table == Table::Spells) {
+            fields["_attack"] = kSpellRowAttacks[id];
         }
         if (table == Table::Rewards) {
             // The class and the outcomes by name, as notes.
@@ -758,6 +967,10 @@ std::optional<Pack> parse_pack_checked(std::string_view text, std::string id, st
                 int64_t number = 0;
                 if (field(*table, key) == nullptr) {
                     error = where + ": unknown field \"" + key + "\"";
+                    return std::nullopt;
+                }
+                if (*table == Table::Spells && parse_value(value, number) && !spell_target(number)) {
+                    error = where + ": " + key + ": an attack 1..158 that is not a generic magic attack (45..54, 145)";
                     return std::nullopt;
                 }
                 if (!parse_value(value, number) || !pack.set_field(*table, rid, key, number)) {

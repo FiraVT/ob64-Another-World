@@ -18,33 +18,30 @@ enum class Choice {
     Contrast = 1,         // NORMAL / HIGH: the Esc menu's contrast
     PixelFilter = 2,      // SMOOTH / SHARP: how the picture is scaled (renderer.cpp)
     TurboA = 3,           // OFF / ON: holding A repeats it
-    LargeUnits = 4,       // ONE SQUARE / VANILLA: large classes in the Organize rules
-    WarDirector = 5,      // OFF / ON, ON by default (war_director.cpp)
-    LootUpgrades = 6,     // OFF / ON, ON by default
-    TrainingCatchUp = 7,  // OFF / ON, ON by default
-    SharedExp = 8,        // OFF / ON, ON by default (exp_share.cpp)
-    ClassAlignment = 9,   // IGNORED / VANILLA (class_rebalance.cpp)
-    PauseUnfocused = 10,  // OFF / ON: the Esc menu opens when the window loses focus
-    SkipIntro = 11,       // OFF / ON: boot to the title menu
-    ButtonPrompts = 12,   // AUTO / XBOX / PLAYSTATION / NINTENDO (input_map.cpp pad_style)
-    HdTextures = 13,      // OFF / ON, ON by default: texture-packs/ at renderer start
-    TextFont = 14,        // one of texture-packs/text/<name>, found on disk, saved by name
-    FieldControls = 15,   // MODERN / CLASSIC: the port's field overlay and menus (field_select.cpp)
-    UnitReports = 16,     // LOG / PAUSE: a unit's field message goes to the alert log
-    BattleSpeed = 17,     // SAME / X1 / X2 / X4: the speed while a battle runs
-    SelectPause = 18,     // OFF / ON, ON by default: selecting a unit on the field pauses
-    EnemyWeapons = 19,    // VARIED / ORIGINAL
-    EnemyFormations = 20, // TACTICAL / ORIGINAL
-    EnemyRanks = 21,      // VETERANS / ORIGINAL
-    ConfinePointer = 22,  // OFF / ON, ON by default: the pointer stays in the focused window (sdl_platform.cpp)
-    EnemyTactics = 23,    // EASY / NORMAL / HARD / VETERAN, NORMAL by default (enemy_commander.cpp)
-    DialogueAutoPlay = 24,  // OFF / ON (dialogue_autoplay.cpp)
-    AutoCommander = 25,   // OFF / ON: the AI commands the player's units (auto_commander.cpp)
-    AutoEnding = 26,      // LIBERATE / CAPTURE / EITHER: how the AI takes towns (auto_commander.cpp)
-    StickX = 27,          // NORMAL / INVERTED: the left stick's x as the N64 stick (sdl_platform.cpp get_input)
-    StickY = 28,          // NORMAL / INVERTED: the left stick's y as the N64 stick
+    WarDirector = 4,      // OFF / ON, ON by default (war_director.cpp)
+    LootUpgrades = 5,     // OFF / ON, ON by default
+    TrainingCatchUp = 6,  // OFF / ON, ON by default
+    PauseUnfocused = 7,   // OFF / ON: the Esc menu opens when the window loses focus
+    SkipIntro = 8,        // OFF / ON: boot to the title menu
+    ButtonPrompts = 9,    // AUTO / XBOX / PLAYSTATION / NINTENDO (input_map.cpp pad_style)
+    HdTextures = 10,      // OFF / ON, ON by default: texture-packs/ at renderer start
+    TextFont = 11,        // one of texture-packs/text/<name>, found on disk, saved by name
+    FieldControls = 12,   // MODERN / CLASSIC: the port's field overlay and menus (field_select.cpp)
+    UnitReports = 13,     // LOG / PAUSE: a unit's field message goes to the alert log
+    BattleSpeed = 14,     // SAME / X1 / X2 / X4: the speed while a battle runs
+    SelectPause = 15,     // OFF / ON, ON by default: selecting a unit on the field pauses
+    EnemyWeapons = 16,    // VARIED / ORIGINAL
+    EnemyFormations = 17, // TACTICAL / ORIGINAL
+    EnemyRanks = 18,      // VETERANS / ORIGINAL
+    ConfinePointer = 19,  // OFF / ON, ON by default: the pointer stays in the focused window (sdl_platform.cpp)
+    EnemyTactics = 20,    // EASY / NORMAL / HARD / VETERAN, NORMAL by default (enemy_commander.cpp)
+    DialogueAutoPlay = 21,  // OFF / ON (dialogue_autoplay.cpp)
+    AutoCommander = 22,   // OFF / ON: the AI commands the player's units (auto_commander.cpp)
+    AutoEnding = 23,      // LIBERATE / CAPTURE / EITHER: how the AI takes towns (auto_commander.cpp)
+    StickX = 24,          // NORMAL / INVERTED: the left stick's x as the N64 stick (sdl_platform.cpp get_input)
+    StickY = 25,          // NORMAL / INVERTED: the left stick's y as the N64 stick
 };
-constexpr int kChoiceCount = 29;
+constexpr int kChoiceCount = 26;
 
 int choice_option_count(Choice choice);
 const char* choice_label(Choice choice, int index);

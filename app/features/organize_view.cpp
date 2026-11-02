@@ -566,7 +566,8 @@ Member read_member(const uint8_t* rdram, int ref) {
 }
 
 // The Change Class list for the selected character. Class changes follow the
-// game's own rules (with no alignment requirement, class_rebalance.cpp) and are
+// game's own rules (alignment limits through the class_alignment filter,
+// class_rebalance.hpp) and are
 // made in the game's Organize menu, so the list holds the current class. The
 // game's candidate list (func_ovlS_801D2808) replaces it once this view edits.
 void refresh_classes(Model& model, const uint8_t* rdram) {
@@ -627,16 +628,18 @@ void refresh_classes(Model& model, const uint8_t* rdram) {
                     n.shortfall = n.need > 0 && n.have < n.need;
                     option.needs.push_back(n);
                 }
-                // Alignment only counts with CLASS ALIGNMENT = VANILLA
-                // (class_rebalance.cpp ogre_alignment_requirement).
-                if (choice_index(Choice::ClassAlignment) == 1 && (c.req[6] != 0xFF || c.req[7] != 0xFF)) {
+                // The alignment limits the game's check sees: the
+                // class_alignment filter's (class_rebalance.hpp), 0xFF for none.
+                const int low = static_cast<int>(class_rebalance::alignment_limit(c.req[6]));
+                const int high = static_cast<int>(class_rebalance::alignment_limit(c.req[7]));
+                if (low != 0xFF || high != 0xFF) {
                     StatNeed n;
                     n.name = "ALN";
                     n.have = ch.alignment;
-                    n.need = c.req[6] == 0xFF ? 0 : c.req[6];
+                    n.need = low == 0xFF ? 0 : low;
                     n.fill = std::clamp(n.have, 0, 100);
                     n.mark = std::clamp(n.need, 0, 100);
-                    n.shortfall = (c.req[6] != 0xFF && n.have < c.req[6]) || (c.req[7] != 0xFF && n.have > c.req[7]);
+                    n.shortfall = (low != 0xFF && n.have < low) || (high != 0xFF && n.have > high);
                     option.needs.push_back(n);
                 }
             }

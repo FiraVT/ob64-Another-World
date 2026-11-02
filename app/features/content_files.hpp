@@ -27,6 +27,8 @@
 #include <string_view>
 #include <vector>
 
+#include "mod_options.hpp"
+
 namespace ogre::content::files {
 
 enum class Kind { Pack, Script };
@@ -66,6 +68,7 @@ struct Mod {
     int files = 0;
     int order = 0;  // place in the load order among all mods, from 0
     bool shipped = false;  // in content/ beside the executable
+    std::vector<mod_options::Option> options;  // mod.json "options" (mod_options.hpp)
 };
 
 struct Listing {
@@ -127,9 +130,12 @@ bool valid_url(std::string_view url);
 // compared with the listed items, never used as paths.
 bool valid_key(std::string_view key);
 
-// Erases a player's item (a mod folder with everything in it, a loose file or
-// a LordlyCaliber folder) for good. Refused for anything that is not directly
-// inside user-content/. False with `error` set on a refusal or a failure.
+// Erases an item for good: a player's item (a mod folder with everything in it,
+// a loose file or a LordlyCaliber folder) directly inside user-content/, or a
+// shipped mod folder (with mod.json) directly inside content/. Anything else is
+// refused. The MODS tab keeps a deleted shipped mod OFF in mod-settings.json,
+// so an update that puts the folder back leaves it off. False with `error` set
+// on a refusal or a failure.
 bool erase(const Mod& mod, std::string& error);
 
 }  // namespace ogre::content::files

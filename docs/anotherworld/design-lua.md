@@ -73,12 +73,18 @@ error is logged with a traceback: `[lua] user-content/x.lua frame: ...`.
 | `game.class_of(character)` | an army character's class (1..99) |
 | `game.set_class(character, class)` | puts an army character into a class (an id or a new class's key) |
 | `game.recruit(class, level)` | a new army character of a class (an id or a new class's key) at a level 1..50, built by the game's own builder on the next mission field update; false when eight wait (design-new-classes.md section 8) |
+| `game.character(character)` | `{class, level, exp}` of an army character (1..99): record bytes `+0x11`, `+0x13`, `+0x35` |
+| `game.set_exp(character, exp)` | an army character's EXP, 0..99; the level stays |
+| `game.unit(unit)` | the five member bytes of a unit (0..29 the player's, 30..59 the enemy's), leader first: 0 empty, 1..99 a character, 100+ a soldier |
+| `options.get(key)` | one of the script's own mod's options (`design-mods.md` section 5.2): `true`/`false`, the choice's label, or the number; a loose script or another mod's key raises an error |
+| `battle.fighter(n)` | `{class, hp, hp_max, side, out, ready}` of battle participant 0..19, or nil outside a battle or for an empty slot; `out` is flags bit 0, `ready` bits 0 and 1 clear |
 
 `content.get`/`set` take a new class's key in place of its id for `classes`
 and `appearances`.
 
-Tables are `"classes"`, `"attacks"`, `"items"`, `"consumables"` and
-`"rewards"`. A wrong table, id, field or value raises an error.
+Tables are `"classes"`, `"attacks"`, `"spells"`, `"items"`, `"consumables"`
+and `"rewards"` (`spells`: rows 0..4 for attacks 45..48 and 145,
+`design-content-database.md` section 7.0). A wrong table, id, field or value raises an error.
 
 | event | thread | when | handler |
 |---|---|---|---|
@@ -87,9 +93,22 @@ Tables are `"classes"`, `"attacks"`, `"items"`, `"consumables"` and
 | `field_frame` | game | the field camera pan's exit, every field frame | no arguments |
 | `item_granted` | game | the item grant routine's entry | the item word (bit 15 set: equipment id, else consumable id); return another word to grant it instead |
 | `frame` | main | every frame | no arguments |
+| `battle_start`, `battle_end` | main | the battle bank (ROM `0x22A250`) becomes resident in scene `0x0D`, and leaves | the player's unit (0..29), or -1 |
+| `battle_attack` | game | `ogre_battle_pick_attack` (`0x801C89E4`), after a battle form rule | the fighter (0..19) and the attack; return an attack 0..158 |
+| `battle_attack_count` | game | `ogre_battle_attack_count`, before each store of the fight's attack count | the fighter and the count; return 0..15 |
+| `class_alignment` | game, main | the Change Class and qualify checks' alignment loads; the Organize view's chart | the limit byte; return 0..255 (255: no limit) |
+| `unit_size` | game, main | the Organize rules (bank S), `organize_edit.cpp`, the war director's `place_cost` | a class's size (1 or 2); return the places it takes, 1..2 |
 
 The four game events are the existing event table (`game_events.hpp`,
-`config/hooks.toml`).
+`config/hooks.toml`). The last four are filter events: the core calls
+`lua::filter` at one of the game's decisions, each handler gets the value the
+previous one returned, and a value outside the range is ignored. The Another
+World pack uses them (`design-another-world-pack.md` section 7).
+
+A handler may call `on()`. The new handler runs from the next dispatch of its
+event: the dispatch loop indexes the handler list and finds each handler again
+after its call, because adding to the list can move it (review AW-01,
+2026-11-01; the loop used to hold a reference across the call).
 
 ## 6. Threads
 

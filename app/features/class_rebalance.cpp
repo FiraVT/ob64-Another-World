@@ -1,14 +1,11 @@
-// Class rebalance. See class_rebalance.hpp and docs/anotherworld/design-class-rebalance.md.
+// Class rules. See class_rebalance.hpp.
 
 #include "game_addresses.hpp"
 #include "class_rebalance.hpp"
 #include "content_db.hpp"
-
-#include <cstdio>
-#include <cstdlib>
+#include "lua_runtime.hpp"
 
 #include "librecomp/overlays.hpp"
-#include "options.hpp"
 #include "ultramodern/ultramodern.hpp"
 
 namespace ogre::class_rebalance {
@@ -37,10 +34,9 @@ uint32_t rd32(const uint8_t* rdram, uint32_t address) {
            (static_cast<uint32_t>(rd8(rdram, address + 2)) << 8) | rd8(rdram, address + 3);
 }
 
-bool g_announced = false;
 // Classes the ROM gives size 2, recorded the first time each is seen. The
 // table keeps size 2 (an earlier build wrote 1 and is repaired by tick);
-// ogre_class_size answers 1 to the Organize rules in ONE SQUARE mode.
+// ogre_class_size answers the unit_size filter's places to the Organize rules.
 bool g_large[CLASS_COUNT] = {};
 
 }  // namespace
@@ -55,13 +51,13 @@ void tick(uint8_t* rdram) {
         return;
     }
 
-    // Large units take one square and one member slot in ONE SQUARE mode
-    // (GAMEPLAY > LARGE UNITS). The class table keeps the ROM's size 2, so
-    // every screen that draws a unit (battle, the field's unit menus) picks the
-    // large figure; the Organize rules see 1 through ogre_class_size. The first
-    // version wrote size 1 into the table, and battle and the field menus then
-    // drew large-only classes through their empty small-picture ids, which is
-    // picture 0, the Black Knight (developer, 2026-10-29).
+    // The class table keeps the ROM's size 2, so every screen that draws a
+    // unit (battle, the field's unit menus) picks the large figure; the
+    // Organize rules see the unit_size filter's answer through
+    // ogre_class_size. An earlier version wrote size 1 into the table, and
+    // battle and the field menus then drew large-only classes through their
+    // empty small-picture ids, which is picture 0, the Black Knight
+    // (developer, 2026-10-29).
     for (int c = 1; c < CLASS_COUNT; c++) {
         const uint32_t size = CLASS_TABLE + static_cast<uint32_t>(c) * CLASS_STRIDE + CLASS_SIZE;
         if (rd8(rdram, size) == 2u) {
@@ -70,14 +66,6 @@ void tick(uint8_t* rdram) {
         if (g_large[c] && rd8(rdram, size) != 2u) {
             wr8(rdram, size, 2u);
         }
-    }
-
-    // The stat and attack changes are the pack content/class-rebalance.json,
-    // which the content database's bridge (content::tick) writes.
-
-    if (!g_announced) {
-        g_announced = true;
-        std::fprintf(stderr, "[rebalance] large units: one square in Organize\n");
     }
 }
 
@@ -112,38 +100,44 @@ extern "C" uint32_t ogre_display_kind(uint8_t* /*generated_rdram*/, uint32_t ent
     return original_large(cls) ? 3u : kind;
 }
 
-// No alignment requirement for a class change (developer, 2026-10-29). The
-// Change Class check func_ovlS_801D2378 reads byte 6 (minimum alignment) at
-// 0x801D2580 and byte 7 (maximum) at 0x801D25AC of the target's requirement
-// record, and skips the test when the byte is 0xFF. config/hooks.toml
-// passes both loads through this function, which answers 0xFF, so the stats,
-// the class line, the basic equipment and the quest classes stay vanilla.
-// CLASS ALIGNMENT VANILLA (GAMEPLAY tab) keeps the vanilla alignment test;
-// OGRE_CLASS_ALIGNMENT=1 or 0 forces it for a developer run.
+// A class change's alignment limits. The Change Class check
+// func_ovlS_801D2378 reads byte 6 (minimum alignment) at 0x801D2580 and byte
+// 7 (maximum) at 0x801D25AC of the target's requirement record, and skips the
+// test when the byte is 0xFF; the qualify check reads the same pair at
+// 0x801D720C and 0x801D7238. config/hooks.toml passes the four loads through
+// this function, which runs the Lua filter event class_alignment
+// (lua_runtime.hpp). The Another World mod pack answers 0xFF
+// (content/another-world/class-rules.lua); with no handler the game's own
+// limits stand.
 extern "C" uint32_t ogre_alignment_requirement(uint32_t requirement) {
-    bool vanilla = ogre::choice_on(ogre::Choice::ClassAlignment);
-    if (const char* value = std::getenv("OGRE_CLASS_ALIGNMENT"); value != nullptr && value[0] != '\0') {
-        vanilla = value[0] == '1';
-    }
-    return vanilla ? requirement : 0xFFu;
+    return static_cast<uint32_t>(ogre::lua::filter("class_alignment", {}, requirement & 0xFFu, 0, 0xFF));
 }
 
-// LARGE UNITS ONE SQUARE, the rules half. config/hooks.toml passes the
-// class size getter's result (func_8016DE3C, class byte +4 or the class key's)
-// through here with the caller's return address. The Organize screen (bank S,
-// ROM 0x87220 at RAM 0x8019A7C0..0x801F1520) reads the size in 16 places to
-// count a unit's places (+1 or +2), to place a large member away from its
-// neighbours and to set each character's kind byte; for those a large class
-// answers 1, which is what the first version achieved by writing 1 into the
-// table. Its two draw sites (the jal at 0x8019FB7C and 0x801BA990, return
-// addresses +8) and every caller outside bank S get the real 2. The kind byte
-// therefore stays 1, and the five Organize draw readers keep going through
+uint32_t ogre::class_rebalance::alignment_limit(uint32_t requirement) {
+    return ogre_alignment_requirement(requirement);
+}
+
+int ogre::class_rebalance::unit_places(int size) {
+    return static_cast<int>(ogre::lua::filter("unit_size", {}, size, 1, 2));
+}
+
+// The places a large class takes in the Organize rules. config/hooks.toml
+// passes the class size getter's result (func_8016DE3C, class byte +4 or the
+// class key's) through here with the caller's return address. The Organize
+// screen (bank S, ROM 0x87220 at RAM 0x8019A7C0..0x801F1520) reads the size in
+// 16 places to count a unit's places (+1 or +2), to place a large member away
+// from its neighbours and to set each character's kind byte; for those the
+// size goes through the Lua filter event unit_size, which the Another World
+// mod pack answers with 1 for size 2 (content/another-world/class-rules.lua).
+// Its two draw sites (the jal at 0x8019FB7C and 0x801BA990, return addresses
+// +8) and every caller outside bank S get the real 2. With size 1 the kind
+// byte stays 1, and the five Organize draw readers keep going through
 // ogre_display_kind above.
 extern "C" uint32_t ogre_class_size(uint8_t* /*rdram*/, uint32_t size, uint32_t return_address) {
     constexpr uint32_t BANK_S_RAM = 0x8019A7C0u;
     constexpr uint32_t BANK_S_SIZE = 0x56D60u;
     constexpr uint32_t BANK_S_ROM = 0x087220u;
-    if ((size & 0xFFu) != 2u || ogre::choice_on(ogre::Choice::LargeUnits)) {
+    if ((size & 0xFFu) != 2u) {
         return size;
     }
     if (return_address < BANK_S_RAM || return_address >= BANK_S_RAM + BANK_S_SIZE ||
@@ -153,6 +147,6 @@ extern "C" uint32_t ogre_class_size(uint8_t* /*rdram*/, uint32_t size, uint32_t 
     if (return_address == 0x8019FB84u || return_address == 0x801BA998u) {
         return size;
     }
-    return 1u;
+    return static_cast<uint32_t>(ogre::class_rebalance::unit_places(2));
 }
 

@@ -19,7 +19,7 @@
         <div id="rows">
             <div data-for="r : rows">
                 <div class="section" data-if="r.kind == 'section'">{{r.left}}</div>
-                <!-- The player's mods (ui.cpp ContentMod*): a table with a header, one row per item and its details lines. A row is dragged to a new place; its cells are the switch, the name (details), up, down and delete. -->
+                <!-- The player's mods (ui.cpp ContentMod*): a table with a header, one row per item and its details lines. A row is dragged to a new place within its group (shipped mods, then the player's); its cells are the switch, the name (details), up, down and delete. -->
                 <div class="modhead" data-if="r.kind == 'modhead'">
                     <span class="c-grip"></span><span class="c-num">#</span><span class="c-on">ON</span><span class="c-name">MOD</span><span class="c-status">STATUS</span><span class="c-order">ORDER</span><span class="c-del">DELETE</span>
                 </div>

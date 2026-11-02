@@ -3,7 +3,7 @@
 Status: built 2026-10-31. Names (section 7.2) and the battle reward table
 (section 2.2) were added the same day. Step 2 of `ROADMAP.md` phase R0 (modding plan M1)
 built the database; step 3 added JSON packs that reload while the game runs,
-and the class rebalance is now the JSON file `app/content/class-rebalance.json`;
+and the class rebalance is now the JSON file `app/content/another-world/class-rebalance.json`;
 step 4 imports a LordlyCaliber project's class, item and consumable records
 (section 8). Lua comes later and feeds the same pack type.
 
@@ -238,7 +238,7 @@ still writes it, which is what the rebalance's per-field writes did.
 
 ## 6. The class rebalance as a pack
 
-The rebalance is `app/content/class-rebalance.json`: 19 class records
+The rebalance is `app/content/another-world/class-rebalance.json`: 19 class records
 (including the Centurion records 34, 35 and 94) and the two magic-formula
 attacks (30 Magic Missile, 31 Abyss). It was generated from the former C++
 `CHANGES` table, with each row's comment kept as `_comment` and the class name
@@ -252,7 +252,7 @@ Checks, with an offline harness that runs the code on an 8 MiB RAM image whose
 segment B is filled from `assets/ogre64.z64` (the game was not run):
 
 - The original `class_rebalance.cpp` (commit `0b4d310`) and the database with
-  `content/class-rebalance.json`, three ticks each: 0 bytes differ. The pack
+  `content/another-world/class-rebalance.json`, three ticks each: 0 bytes differ. The pack
   owns 245 bytes; 178 of them differ from the ROM.
 - A `user-content/test.json` that sets class 34 `str_base` 99 and item 1
   `price` `0x1234`: after `reload_files` both show in RAM and the conflict with
@@ -282,8 +282,8 @@ segment B is filled from `assets/ogre64.z64` (the game was not run):
 }
 ```
 
-- The top level is an object of tables: `classes`, `attacks`, `items`,
-  `consumables`.
+- The top level is an object of tables: `classes`, `attacks`, `spells`,
+  `items`, `consumables` (and `appearances`, `rewards`, `battle_forms`).
 - Each table is an object of records by id, in decimal or `0x` hex. The id must
   be below the table's count.
 - Each record is an object of named fields (section 3). A value is a JSON
@@ -298,6 +298,24 @@ segment B is filled from `assets/ogre64.z64` (the game was not run):
 
 The values are the game's own: a class's base stat and growth, an attack id
 and count per row, an item price in goth.
+
+### 7.0 Spells
+
+`spells` holds the attack each generic magic attack becomes, per element of
+the caster's gear (`game_addresses.hpp` `kSpellMaps`, read by `func_8016E52C`).
+Row 0..3 is attack 45..48 and row 4 is attack 145; the dump names it in
+`_attack`. The fields are `physical`, `wind`, `fire`, `earth`, `water`,
+`virtue` and `bane` (element 0..6). Rows 0..3 never read `physical`: element 0
+takes the class's front-row attack. A value must be an attack 1..158 that is
+not itself generic (45..54, 145).
+
+```json
+{ "spells": { "0": { "fire": 65 } } }
+```
+
+This makes attack 45 cast attack 65 for a caster with fire gear, where the
+ROM has 63. LordlyCaliber's `spellLinks` import into this table
+(`design-lordlycaliber-import.md` section 4.1).
 
 ### 7.1 The dump
 

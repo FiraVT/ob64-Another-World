@@ -48,6 +48,7 @@ description.
 | `priority` | integer | -1000 to 1000, default 0; a higher priority loads later and wins a conflict |
 | `requires` | list of ids | mods that must be installed, enabled and loadable; this mod loads after them |
 | `enabled` | boolean | the default; `false` keeps the mod installed but not loaded until the player turns it on in the MODS tab (section 5) |
+| `options` | list | optional settings the player sets under the mod's row and the mod's scripts read (section 5.2); a list outside the limits refuses the mod |
 
 Keys that start with `_` are free for notes. A `mod.json` larger than 64 KiB
 is refused.
@@ -87,11 +88,19 @@ Code: `app/src/ui.cpp` (`Panel::load_content_mods`, the `ContentMod*` rows),
 drawn by `app/ui/options.rml` in the game's Esc menu and as text on the start
 screen.
 
-The tab is one table of what the player put into `user-content/`: mod folders,
-loose packs and scripts, and LordlyCaliber folders, in load order. `content/`
-beside the executable is the game's own (today `class-rebalance.json`, Another
-World's class rebalance) and is not listed; neither are the packs the port
-makes while it runs. The columns are:
+The tab is one table in load order, in two groups. The first, SHIPPED WITH THE
+GAME, holds the mod folders in `content/` beside the executable (today the
+Another World pack, `content/another-world/`, `design-another-world-pack.md`).
+A shipped mod has the switch, details, up/down within its group, and DELETE.
+DELETE works once the mod is off and the game restarted, and it keeps the mod
+OFF in `mod-settings.json`, so an update that puts the folder back leaves it
+off (maintainer, 2026-11-01). Its on/off applies at the next start: the content database holds a shipped mod at
+its start state like a mod that adds classes (`content_db.hpp` `held_mods`),
+and the status reads PENDING until then. ALL ON and ALL OFF set only the
+second group. The second group is what the player put into `user-content/`:
+mod folders, loose packs and scripts, and LordlyCaliber folders. Loose files
+in `content/` and the packs the port makes while it runs are not listed. The
+columns are:
 
 | column | what it shows |
 |---|---|
@@ -182,6 +191,50 @@ While the game runs:
 The maintainer chose to keep the choices in a separate file that overrides the
 mod's default, and asked that the tab show plainly where each state comes
 from. The maintainer confirmed the apply rule above (2026-11-01).
+
+### 5.2 Mod options
+
+A mod may declare settings in its `mod.json` `"options"` list
+(`app/features/mod_options.{hpp,cpp}`). A mod without the list has none, and
+nothing else about it changes. The MODS tab shows them as rows under the
+mod's details (MORE): a toggle or a choice as a row of labels, a number as a
+value stepped with LEFT/RIGHT (ENTER or A wraps from the maximum to the
+minimum). The option's `help` is the hint line.
+
+```json
+"options": [
+  {"key": "shared_exp", "name": "SHARED EXP", "type": "toggle", "default": true,
+   "help": "A battle's EXP is shared across the unit."},
+  {"key": "pace", "name": "PACE", "type": "choice", "choices": ["SLOW", "FAST"], "default": "SLOW"},
+  {"key": "bonus", "name": "BONUS", "type": "number", "min": 0, "max": 50, "step": 5, "default": 10,
+   "restart": true}
+]
+```
+
+| field | rule |
+|---|---|
+| `key` | 1 to 32 of `a-z`, `0-9`, `_`; once per mod |
+| `name` | 1 to 40 characters, no control characters |
+| `help` | optional, 1 to 300 characters |
+| `type` | `"toggle"` (default `true`/`false`), `"choice"` (`choices`: 2 to 8 distinct labels of 1 to 24 characters; default one of them) or `"number"` (whole `min` < `max` within ±1,000,000, `step` ≥ 1 dividing `max - min`, at most 1000 steps; default on a step) |
+| `restart` | optional; `true` keeps the value the game started with until the next start |
+
+At most 32 options. Any rule broken refuses the mod with the reason.
+
+The player's values are `mod-options/<mod id>.json` in the settings folder,
+one file per mod, so one mod's options can be backed up or reset on their
+own. A missing file, a key the mod does not declare, a value of the wrong
+type, off the list or off the steps reads as the default; a file larger than
+16 KiB, nested deeper than one object or not JSON is ignored. A mod id that is
+a Windows device name (`con`, `nul`, `com1`, ...) or starts with `.` gets a
+leading `_` in the file name.
+
+A script reads its own mod's options with `options.get(key)`
+(`design-lua.md` section 5): `true`/`false`, the choice's label, or the
+number. A loose script, or a key of another mod, raises an error. The runtime
+reads the values again about a second after a file in `mod-options/` changes,
+without reloading the scripts. A `restart` option is fixed when the scripts
+first load, and the MODS tab names the value in force until the next start.
 
 ## 6. Reloading
 

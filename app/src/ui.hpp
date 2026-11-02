@@ -164,6 +164,10 @@ public:
         // An open mod's page (mod.json "url"): ENTER, A or a click opens it in
         // the web browser.
         ContentModLink,
+        // One of an open mod's options (mod.json "options", mod_options.hpp):
+        // `mod` indexes content_mods_, `option` the mod's options. A toggle or
+        // a choice is a radio row; a number steps with LEFT/RIGHT.
+        ContentModOption,
         // Turns every content mod on, or off.
         ContentModsAll,
         ContentModsNone,
@@ -407,7 +411,12 @@ private:
         content::files::Mod mod;
         std::string status;  // the row's right column
         std::vector<std::pair<std::string, std::string>> info;  // the open rows
+        std::map<std::string, int64_t> values;  // its options' stored values
     };
+    // Sets one of a mod's options (row `index`, a ContentModOption) and
+    // writes it to the mod's values file.
+    RowAction set_mod_option(size_t index, int64_t value);
+    const mod_options::Option* mod_option(const Row& row) const;
     void load_content_mods();
     void select_content_row(const std::string& folder);
     // Applies `change` to mod-settings.json and reloads the mods. A broken

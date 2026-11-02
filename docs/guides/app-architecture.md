@@ -33,9 +33,9 @@ app/
 
 1. `main.cpp` creates the SDL window and resolves the config directory through
    `ogre::resolve_pref_dir()` (`launcher.cpp`: `SDL_GetBasePath`, so the ROM,
-   `saves/`, `mods/`, `controls.cfg`, `settings.cfg` and `error.log` sit beside
-   the executable; `SDL_GetPrefPath` is the fallback, and `OGRE_PREF_DIR`
-   overrides both).
+   `saves/`, `mods/`, `user-content/`, `controls.cfg`, `settings.cfg` and
+   `error.log` sit beside the executable; `OGRE_PREF_DIR` overrides it, and the
+   per-user preference directory is never used).
 2. `recomp::register_game()` registers the game entry:
    - `entrypoint_address = 0x80070C00`, `entrypoint = recomp_entrypoint`
    - `rom_hash = 0xbe6adaa5c3f8f7a9` (XXH3-64 of the big-endian ROM)

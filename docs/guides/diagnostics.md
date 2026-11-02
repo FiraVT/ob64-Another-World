@@ -178,7 +178,7 @@ captures without a human at the keyboard (see `history-archive:docs/history/DECI
 | `OGRE_LAUNCHER_PAD=<tag>,…` | push one synthetic `SDL_CONTROLLERBUTTONDOWN` per 150 ms through the panel's real pad handler, so the pad path is exercised on a machine with no gamepad. Tags are the gamepad tags `controls.cfg` uses (`a`, `b`, `back`, `dup`, `dleft`, `lb`, …) |
 | `OGRE_OVERLAY=1` | open the in-game overlay at startup |
 | `OGRE_OVERLAY_AT_MS=<n>` | push one synthetic `ESC` down `n` ms after the overlay is initialised, so the real open path runs without a human |
-| `OGRE_OVERLAY_TAB=<main\|controls\|settings\|debug>` | open the overlay's panel on that tab (`start` is accepted as an alias for `main`, which carries EXIT GAME) |
+| `OGRE_OVERLAY_TAB=<main\|controls\|settings\|gameplay\|roster\|mods\|debug>` | open the overlay's panel on that tab (`start` is accepted as an alias for `main`, which carries EXIT GAME) |
 | `OGRE_OVERLAY_KEYS=<name>,…` | push one synthetic keydown per 150 ms while the overlay is visible (same names as `OGRE_LAUNCHER_KEYS`). `main` + `Space` activates EXIT GAME |
 | `OGRE_OVERLAY_PAD=<tag>,…` | the same for the pad (same tags as `OGRE_LAUNCHER_PAD`), delivered whether or not the overlay is visible, so a script's first `back` opens it |
 | `OGRE_OVERLAY_OPACITY=<0.2..1.0>` | the overlay window's opacity (default 0.90) |
@@ -708,9 +708,9 @@ The runtime keeps the image at
 ```
 <config>/saves/<game id>.bin          # ogrebattle64-us-rev1.bin, exactly 32768 bytes
 # <config> is the executable's own directory (so the save sits beside the app,
-# and a distributed package carries its saves with it), unless OGRE_PREF_DIR
-# relocates it or the install location is read-only — in which case the
-# per-user preference dir is used (macOS: ~/Library/Application Support/ogrebattle64/)
+# and a distributed package carries its saves with it); OGRE_PREF_DIR relocates
+# it. The per-user preference dir is never used (docs/guides/build.md,
+# "Config directory")
 ```
 
 and the game's own DMA path reaches it: `func_8008BC40` queues an `OSIoMesg` to
@@ -752,7 +752,7 @@ guessing:
 ```sh
 tools/sramsave.py check  ~/Downloads/save.srm        # what is in the file
 tools/sramsave.py import ~/Downloads/save.srm \
-  "$HOME/Library/Application Support/ogrebattle64/saves/ogrebattle64-us-rev1.bin"
+  build-dist/saves/ogrebattle64-us-rev1.bin           # <config>/saves/, beside the executable
 tools/sramsave.py export <that .bin> out.sra         # 32-bit byteswapped, .sra-style
 ```
 

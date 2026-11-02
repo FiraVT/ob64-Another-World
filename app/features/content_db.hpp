@@ -11,10 +11,11 @@
 //   table        RAM (US revision 1)       records  stride  verified reader
 //   classes      0x80187C34 + c*0x48        165      0x48    func_8016DE3C (+0x04, +0x45)
 //   attacks      0x8018AA9C + a*0x10        159      0x10    the class rows (+0x37)
+//   spells       0x8018B48C + r*0x08          5      0x08    func_8016E52C (0x8016E94C..)
 //   items        0x8018C42C + i*0x20        278      0x20    func_8016F5D0..func_8016F8A4
 //   consumables  0x8018E6EC + i*0x0C         45      0x0C    func_8016F500..func_8016F580
 //
-// The four tables sit back to back in the streamed segment B data (ROM
+// The five tables sit back to back in the streamed segment B data (ROM
 // 0x40E80 + vram - 0x8016AF80); game_addresses.hpp cites each.
 //
 // While the recompiled game code still reads those tables, the bridge
@@ -39,11 +40,11 @@
 namespace ogre::content {
 
 // The tables in address order (the bridge relies on it).
-enum class Table : uint8_t { Classes, Attacks, Items, Consumables, Appearances, Rewards };
-constexpr int kTableCount = 6;
+enum class Table : uint8_t { Classes, Attacks, Spells, Items, Consumables, Appearances, Rewards };
+constexpr int kTableCount = 7;
 
 struct TableInfo {
-    const char* name;   // "classes", "attacks", "items", "consumables", "appearances", "rewards"
+    const char* name;   // "classes", "attacks", "spells", "items", "consumables", "appearances", "rewards"
     uint32_t address;   // record 0 in guest RAM
     uint32_t stride;    // bytes per record
     uint16_t count;     // records in the ROM
@@ -72,6 +73,13 @@ struct Field {
 
 std::span<const Field> fields(Table table);
 const Field* field(Table table, std::string_view name);
+
+// The generic magic attack of each spells row (game_addresses.hpp kSpellMaps).
+constexpr std::array<uint16_t, 5> kSpellRowAttacks = {45, 46, 47, 48, 145};
+// True for an attack a spells field may name: an attack of the ROM's table
+// that is not itself generic (45..54 or 145; LordlyCaliber refuses the same,
+// attack_data.cpp validateSpellLinks). Pack::set_field checks it.
+bool spell_target(int64_t attack);
 
 // The seven class stats, in record order (class +0x08 + 4*stat).
 enum Stat : uint8_t { HP, STR, VIT, INT, MEN, AGI, DEX };
@@ -128,7 +136,10 @@ struct BattleFormStrike {
     // empty keeps the class.
     std::vector<int> forms;
     std::vector<std::string> form_keys;
-    int attack = -1;     // attack id for this strike; -1 takes the form's attack for the row
+    // Attack ids for this strike: one, or a list the strike picks from at
+    // random (never the fighter's previous pick when the list has another);
+    // empty takes the form's attack for the row.
+    std::vector<int> attacks;
     bool breath = false;  // "attack": "breath": the form's breath attack, from any row
 };
 
@@ -140,7 +151,8 @@ struct BattleForm {
     std::vector<BattleFormStrike> strikes;
 };
 constexpr int kMaxBattleStrikes = 9;
-constexpr int kMaxBattleForms = 32;  // classes in one strike's "form" list
+constexpr int kMaxBattleForms = 32;    // classes in one strike's "form" list
+constexpr int kMaxBattleAttacks = 32;  // attacks in one strike's "attack" list
 
 // True for an art file name a pack may give: a relative path of 1 to 128
 // characters inside the pack's folder (letters, digits, '-', '_', '.', '/'),
@@ -163,7 +175,7 @@ std::string lordlycaliber_class_key(std::string_view pack_id, int lc_id);
 // A content pack: a named list of edits. A code pack, a JSON pack and a
 // LordlyCaliber project all become one of these.
 struct Pack {
-    std::string id;      // "content/class-rebalance.json"
+    std::string id;      // "content/another-world/class-rebalance.json"
     std::string source;  // where it came from, for the log and the MODS tab
     std::filesystem::path folder;  // the file's folder, which art paths are relative to
     std::vector<Edit> edits;
@@ -261,7 +273,7 @@ struct ConsumableRecord : Record {
 };
 
 // Reads one JSON pack. The file is an object of tables ("classes", "attacks",
-// "items", "consumables"), each an object of records by id ("34" or "0x22"),
+// "spells", "items", "consumables"), each an object of records by id ("34" or "0x22"),
 // each an object of named fields with integer values. A record may also carry
 // "record" (the whole record as hex) and "bytes" ({"0x37": "0902"}: hex at an
 // offset). Keys that start with "_" are notes and are skipped. On an error
@@ -270,8 +282,10 @@ struct ConsumableRecord : Record {
 // A file whose "format" is "LordlyCaliberProject" is a LordlyCaliber project
 // (version 1): its "records" become edits of the bytes that differ from the
 // ROM's record, after the name pointer, so a project made from either US
-// revision applies. Its other sections and its added classes and items are
-// listed in Pack::not_applied. Needs load() to have run.
+// revision applies. Its "attacks" section gives attack record edits, names and
+// the spell links the spells table holds (read_lordlycaliber_attacks). Its
+// other sections and its added classes and items are listed in
+// Pack::not_applied. Needs load() to have run.
 std::optional<Pack> parse_pack(std::string_view text, std::string id, std::string& error);
 // A pack file larger than this is refused unread.
 constexpr size_t kMaxPackFileSize = 16u * 1024u * 1024u;
@@ -344,7 +358,7 @@ struct BattleFormRule {
     bool repeat;
     struct Strike {
         std::vector<int> forms;  // empty keeps the class; more than one: pick at random
-        int attack;              // -1 the form's own
+        std::vector<int> attacks;  // empty: the form's own; more than one: pick at random
         bool breath;             // the form's breath attack
     };
     std::vector<Strike> strikes;
@@ -354,6 +368,9 @@ std::vector<BattleFormRule> battle_form_rules();
 // A record's current name: a pack's, else the ROM's. "Short Sword";
 // "Altar of\nResurrection" for a two-line name.
 std::string record_name(Table table, uint16_t id);
+// The ROM's name of a record in the game's encoding, without the NUL; empty
+// for an unnamed table or a name outside segment B.
+std::vector<uint8_t> original_name(Table table, uint16_t id);
 
 // The game's name encoding. A one-line name is its ASCII bytes. A two-line
 // name is 0x0E, line 1, 0x10 'c', line 2, 0x0F (the ROM's own two-line names;
@@ -392,11 +409,13 @@ std::span<const Conflict> conflicts();
 std::vector<std::pair<std::string, std::string>> status();
 
 // --- mods (docs/anotherworld/design-mods.md section 5) ------------------------
-// A mod that adds new classes keeps the on/off state it had when the database
-// first loaded: new class art is built into the ROM image once at start and new
-// class ids go into the saves. The map is mod id -> that state, for every such
-// mod; scan() takes it, and the Lua runtime passes the same map, so both load
-// the same files. Empty before the database loads.
+// A mod that adds new classes, or ships with the game in content/, keeps the
+// on/off state it had when the database first loaded: new class art is built
+// into the ROM image once at start, new class ids go into the saves, and a
+// shipped pack's rules change saved state (design-another-world-pack.md
+// section 3.3). The map is mod id -> that state, for every such mod; scan()
+// takes it, and the Lua runtime passes the same map, so both load the same
+// files. Empty before the database loads.
 std::map<std::string, bool> held_mods();
 
 // The mods as of the last read, in load order, and why mod-settings.json was

@@ -314,19 +314,20 @@ std::filesystem::path resolve_pref_dir() {
         std::filesystem::create_directories(dir);
         return dir;
     }
+    // The port is self-contained: nothing goes in the platform preference
+    // directory (%APPDATA% and the like), even when the executable's directory
+    // is read-only (maintainer, 2026-11-01). The game then runs, but its saves,
+    // settings and mod choices are not kept.
     const std::filesystem::path exe_dir = executable_directory();
-    if (is_writable_directory(exe_dir)) {
-        return exe_dir;
+    static bool warned = false;
+    if (!warned && !is_writable_directory(exe_dir)) {
+        warned = true;
+        std::fprintf(stderr,
+                     "[launcher] %s is not writable: saves, settings and mods will not be kept. Move the game to "
+                     "a folder you can write to, or set OGRE_PREF_DIR.\n",
+                     exe_dir.string().c_str());
     }
-    // Read-only install location: fall back to the platform preference dir so
-    // saves and mods still work.
-    char* pref = SDL_GetPrefPath("", "ogrebattle64");
-    if (pref == nullptr) {
-        return exe_dir;
-    }
-    std::filesystem::path dir{pref};
-    SDL_free(pref);
-    return dir;
+    return exe_dir;
 }
 
 std::vector<std::filesystem::path> find_exe_roms(const std::filesystem::path& exe_dir) {

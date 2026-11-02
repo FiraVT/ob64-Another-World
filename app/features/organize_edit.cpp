@@ -44,7 +44,6 @@
 #include "librecomp/overlays.hpp"
 #include "recomp.h"
 #include "save_profiles.hpp"
-#include "options.hpp"
 #include "ultramodern/ultramodern.hpp"
 
 namespace ogre::organize_edit {
@@ -126,10 +125,11 @@ std::mutex g_mutex;
 std::deque<Request> g_queue;
 std::string g_result;
 
-// With LARGE UNITS on VANILLA a large class takes two of the five places and
-// the square rules for it are not decoded, so such characters are not moved.
+// When a large class takes two of the five places (no unit_size rule, see
+// class_rebalance.hpp) the square rules for it are not decoded, so such
+// characters are not moved.
 bool blocked_large(const uint8_t* rdram, int ref) {
-    if (ref <= 0 || ref >= SOLDIER_REF || !choice_on(Choice::LargeUnits)) {
+    if (ref <= 0 || ref >= SOLDIER_REF || class_rebalance::unit_places(2) != 2) {
         return false;
     }
     return class_rebalance::original_large(rd8(rdram, CHAR_TABLE + static_cast<uint32_t>(ref) * CHAR_STRIDE + 0x11));

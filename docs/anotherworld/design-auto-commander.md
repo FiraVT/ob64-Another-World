@@ -18,9 +18,10 @@ An optional AI takes command of the player's units on the mission field
 5. sends a unit into a shop to buy healing items when the army's stock runs
    out.
 
-The player can turn it on for the whole army or for chosen units, and any
-order the player gives a unit takes that unit back from the AI until the
-player hands it back.
+The player can turn it on for the whole army or for chosen units. A move,
+pursue or Return the player gives a unit takes that unit from the AI until the
+order finishes; a Stop or the unit card's AI button takes it until the player
+hands it back (maintainer, 2026-11-01).
 
 Testable checks:
 
@@ -75,8 +76,8 @@ the field update (game thread), the AI:
 4. raises an alert for each new job ("Gryphon squad: resting at Alba, 42% HP").
 
 The AI never acts while a game menu is open (R4 in
-`design-field-controls.md`), and never on a unit the player ordered since the
-unit was last handed to the AI.
+`design-field-controls.md`), and never on a unit that is following a player
+order (section 6).
 
 Decided by the developer (2026-10-31):
 
@@ -222,8 +223,11 @@ verdict and the AI's choice can never disagree. The plan:
   - **Give an order.** A player order on a unit (`field_select.cpp`'s move,
     pursue, hold, Return) takes that unit from the AI. The AI does not issue
     any order to a unit that is in the player's selection
-    (`field_select::selected()`), or to a unit the player has ordered, until
-    the player hands it back with the card's toggle.
+    (`field_select::selected()`), or to a unit the player has ordered. A
+    move, pursue or Return gives the unit back when the unit has stopped
+    marching and has no chase (maintainer, 2026-11-01). A Stop or the card's
+    toggle keeps it until the toggle hands it back. A new mission and turning
+    the AI on give every unit back.
 - The AI reads the selection on every decision, so selecting a unit is enough
   to freeze its AI orders while the player decides.
 - Every decision is an alert, and the overlay draws each AI unit's target

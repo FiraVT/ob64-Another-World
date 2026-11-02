@@ -185,9 +185,12 @@ build of the game may be refused; the start screen prints the reason.
 CONTENT PACKS
 -------------
 
-The game's classes, attacks, items and consumables can be changed with JSON
-files. `content/` in this folder holds the overhaul's own packs (the class
-rebalance is `content/class-rebalance.json`); an update replaces that folder.
+The game's classes, attacks, spells, items and consumables can be changed with
+JSON files. `content/` in this folder holds the overhaul's own mod,
+`content/another-world/` (the class rebalance and the Another World battle,
+EXP and class rules); an update replaces that folder. Its options, and any
+other mod's, are set in the Esc menu's MODS tab under the mod's MORE, and kept
+in `mod-options/` in this folder.
 Put your own packs in `user-content/` in this folder (create it), which an
 update never touches. Packs load in file-name order, `content/` first, and a
 later pack wins. The game reads the files again about a second after one

@@ -275,13 +275,23 @@ runtime joins its saving thread inside `recomp::start`, before either change.
 
 ## Config directory
 
-The executable's own directory by default (`SDL_GetBasePath`), so saves and
-mods live beside the app. `OGRE_PREF_DIR` overrides it; a read-only install
-location falls back to the per-user preference dir:
+The port is self-contained: its config directory is the executable's own
+directory (`SDL_GetBasePath`, `resolve_pref_dir` in `app/src/launcher.cpp`).
+Everything the game reads or writes sits beside the executable:
 
-- macOS: `~/Library/Application Support/ogrebattle64/`
-- Linux: `~/.config/ogrebattle64/`
-- Windows: `%APPDATA%\ogrebattle64\`
+- `saves/` (the battery save, `class-ids.json`)
+- `user-content/` (the player's mods, packs and scripts) and
+  `mod-settings.json`
+- `mods/`, `settings.cfg`, `controls.cfg`, `error.log`
+
+For a development build that is `build-dist/` (Windows) or `build-app/`. To
+install a mod for testing, copy its folder into `<that directory>/user-content/`.
+
+`OGRE_PREF_DIR=<dir>` moves the whole directory for one run. The game never
+uses the per-user preference directory (`%APPDATA%\ogrebattle64\` on Windows
+and the like). When the executable's directory is not writable, it prints
+`[launcher] ... is not writable` and runs, but saves, settings and mod choices
+are not kept; move the game to a folder you can write to.
 
 ## Troubleshooting
 

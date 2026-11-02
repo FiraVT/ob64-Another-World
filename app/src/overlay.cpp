@@ -766,7 +766,7 @@ void overlay_init(Platform& platform, const std::filesystem::path& pref_dir,
     g_overlay.game_pad_count = 4;
     g_overlay.panel = std::make_unique<ui::Panel>(ui::Panel::Mode::Overlay, mod_game_id,
                                                   std::filesystem::path{});
-    // OGRE_OVERLAY_TAB=<main|controls|graphics|audio|gameplay|roster|debug>: open the panel
+    // OGRE_OVERLAY_TAB=<main|controls|graphics|audio|gameplay|roster|mods|debug>: open the panel
     // on that tab, so a scripted run or a screenshot reaches it without input.
     if (const char* tab = std::getenv("OGRE_OVERLAY_TAB")) {
         const std::string name = tab;
@@ -787,6 +787,9 @@ void overlay_init(Platform& platform, const std::filesystem::path& pref_dir,
         }
         else if (name == "roster") {
             g_overlay.panel->set_tab(ui::Tab::Roster);
+        }
+        else if (name == "mods") {
+            g_overlay.panel->set_tab(ui::Tab::Mods);
         }
         else if (name == "saves") {
             g_overlay.panel->set_tab(ui::Tab::Main);
@@ -863,6 +866,10 @@ void field_pause(bool on) {
 
 bool field_paused() {
     return g_field_gate;
+}
+
+bool game_paused() {
+    return g_paused || g_field_gate;
 }
 
 void overlay_open_tab(int tab) {

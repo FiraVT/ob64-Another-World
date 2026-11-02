@@ -48,17 +48,30 @@ in a game yet.
   game's transformation effect. The fighter turns back after its strike; the
   character's saved class and equipment do not change, and the game's "has
   changed class" message is not shown. A strike's form can be a list drawn at
-  random, its attack "breath" (the form's own breath), and `repeat` applies
+  random, its attack a list drawn at random (never the same attack twice in a
+  row when the list has another) or "breath" (the form's own breath), and `repeat` applies
   the strikes to every strike: the Dragon Knight example turns into a random
   elder dragon on each strike (passed a scripted battle run). `battle_form.cpp`,
   `docs/anotherworld/design-battle-transform.md`.
 - **Lua scripts.** `.lua` files in `content/` and `user-content/` react to game
   events, change content records and replace granted items, in a sandbox, and
-  reload while the game runs. `lua_runtime.cpp`, `docs/anotherworld/design-lua.md`.
+  reload while the game runs. Battle start and end events; filter events that
+  change a fighter's attack and attack count, a class change's alignment limits
+  and the places a large class takes; `game.character`, `game.set_exp`,
+  `game.unit` and `battle.fighter`. `lua_runtime.cpp`,
+  `docs/anotherworld/design-lua.md`.
+- **Mod options** (not played). A mod may declare settings in `mod.json`
+  (toggles, choices, numbers, each with a default and help); the player sets
+  them under the mod's row in the MODS tab, they are kept per mod in
+  `mod-options/<id>.json`, and the mod's scripts read them with `options.get`.
+  `mod_options.cpp`, `docs/anotherworld/design-mods.md` section 5.2.
 - **Mod folders.** A folder with a `mod.json` (id, name, version, priority,
   requirements, enabled) groups a mod's packs and scripts and gives it a place
   in the load order. `content_files.cpp`, `docs/anotherworld/design-mods.md`.
-- **MODS tab** (not played). One table of the player's mods, packs and scripts
+- **MODS tab** (not played). The mods shipped with the game (the Another World
+  pack: switch, order and delete, on or off at the next start; a deleted one
+  stays off if an update puts it back), then one
+  table of the player's mods, packs and scripts
   in `user-content/`, in load order: a switch, the name and description,
   the status (loaded, off, pending, refused, conflicts, errors), up/down and
   drag to reorder, details, and delete. The choices are kept in
@@ -68,8 +81,17 @@ in a game yet.
   every build. `docs/anotherworld/security.md`.
 - **LordlyCaliber import.** A LordlyCaliber project folder copied into
   `user-content/` applies its class, item and consumable edits, and the log
-  lists the sections not applied yet.
+  lists the sections not applied yet. From its `attacks` section the port
+  applies attack record edits, attack names and the spell arrays of the
+  generic magic attacks 45..48 and 145; it lists added attacks and the
+  settings LordlyCaliber applies with its own ROM hooks (target patterns, one
+  strike for all targets, undead slaying and the rest). Checked by the pack
+  test and against the ROM with `devtest lint`; not played.
   `docs/anotherworld/design-lordlycaliber-import.md`.
+- **Spell maps.** A pack or script changes which attack a generic magic
+  attack (45..48, 145) becomes for each element of the caster's gear, through
+  the `spells` table. Not played. `docs/anotherworld/design-content-database.md`
+  section 7.0.
 - **ROM patches.** Every `.ips` file in `patches/` is applied to the ROM at
   start, so a text fix or fan translation reaches the port. `rom_patch.cpp`.
 - **Asset replacement.** HD texture and font packs and replacement songs; see
@@ -109,23 +131,31 @@ in a game yet.
 
 ## Classes and battle
 
-- **Class rebalance.** The weak unit families are raised by changing the
-  game's class and attack records, for both sides, as the content pack
-  `content/class-rebalance.json`: Faerie becomes a healer and
+- **Another World mod pack.** The rules below marked *(pack)* are the shipped
+  mod `content/another-world/`, on by default; the MODS tab switches it, and
+  the change applies at the next start. Its options (MORE under its row) turn
+  SHARED EXP, FAERIE HEALS and CENTURION COMMAND on or off and set CLASS
+  ALIGNMENT and LARGE UNITS (IGNORED / ONE SQUARE or VANILLA).
+  `docs/anotherworld/design-another-world-pack.md`.
+- **Class rebalance** *(pack)*. The weak unit families are raised by changing the
+  game's class and attack records, for both sides, as the pack's
+  `class-rebalance.json`: Faerie becomes a healer and
   booster, Gremlin a debuffer, Ogre a size-2 bruiser that keeps up, Gorgon's
   bow is fixed, Goblin and Saturos become raiders, the undead get a real
-  ladder, and others are raised. `app/content/class-rebalance.json`,
-  `class_rebalance.cpp`, `docs/anotherworld/design-class-rebalance.md`.
-- **Centurion** (not played). Base stats halfway between Knight and Paladin,
+  ladder, and others are raised. `app/content/another-world/class-rebalance.json`,
+  `docs/anotherworld/design-class-rebalance.md`.
+- **Centurion** *(pack; not played)*. Base stats halfway between Knight and Paladin,
   Slash ×3 / ×2 / ×1. Each Centurion in a battle gives every Soldier on its side
-  one more attack, and the bonuses stack. `battle_ai.cpp`.
-- **Faerie heals.** When an ally is below 70% HP, Faerie's Throw a Kiss becomes
-  Healing. `battle_ai.cpp`.
-- **Shared EXP.** A battle's experience is pooled and shared across the whole
-  unit. `exp_share.cpp`.
-- **Large units: ONE SQUARE.** Large classes take one square in a unit, so they
-  can stand side by side.
-- **Class alignment: IGNORED.** Class changes do not check alignment.
+  one more attack, and the bonuses stack. `battle-tactics.lua`.
+- **Faerie heals** *(pack)*. When an ally is below 70% HP, Faerie's Throw a Kiss becomes
+  Healing. `battle-tactics.lua`.
+- **Shared EXP** *(pack)*. A battle's experience is pooled and shared across the
+  whole unit. A member keeps every level it gained, and the unit's total gain
+  stays what the battle gave. `shared-exp.lua`.
+- **Large units: one square** *(pack)*. Large classes take one square in a unit, so they
+  can stand side by side. `class-rules.lua`.
+- **No class alignment limits** *(pack)*. Class changes do not check alignment.
+  `class-rules.lua`.
 - **Battle speed.** Battles can run at their own speed (×1 to ×4), apart from
   the field's speed.
 
@@ -142,8 +172,10 @@ in a game yet.
   orders.
 - **Auto commander** (not played; F4). An AI commands the units the player sends
   out: it takes and defends towns, rests hurt units, and attacks strong enemies
-  and the boss in waves. Any order the player gives a unit takes that unit back.
-  AUTO ENDING chooses whether it liberates, captures or does either.
+  and the boss in waves. A move, pursue or Return the player gives a unit takes
+  that unit until the order finishes, and then the AI commands it again; a Stop
+  or the unit card's AI button keeps it until the AI button hands it back. A new
+  mission and turning the AI on give every unit back to the AI. AUTO ENDING chooses whether it liberates, captures or does either.
   `auto_commander.cpp`.
 - **Unit reports: LOG.** A unit's report goes to the alert log and closes by
   itself instead of stopping the game.
@@ -208,7 +240,8 @@ in a game yet.
   `saves/<game id>-quick.bin`; F9 twice within 3 s puts it back and restarts
   the program at the title. `quick_save.cpp`. From frankjniu's Windows fork.
 - **Hang report.** When the game produces no frame for 5 s while its window
-  is open, the port writes `error.log` with the message-queue snapshot
+  is open and the game is not paused on purpose (Esc menu, PAUSE ON SELECT),
+  the port writes `error.log` with the message-queue snapshot
   (`OGRE_HANG_MS`, `0` turns it off). `hang_watch.cpp`. From frankjniu's
   Windows fork.
 - **Save import.** Converts a save from `save-import/` or the Controller Pak

@@ -292,11 +292,11 @@ set(OGRE_APP_SOURCES
     src/game_host.cpp
     features/options.cpp
     features/army_roster.cpp
-    features/exp_share.cpp
     features/class_rebalance.cpp
     features/content_db.cpp
     features/content_json.cpp
     features/content_files.cpp
+    features/mod_options.cpp
     features/class_animation.cpp
     features/class_change.cpp
     features/dialogue_autoplay.cpp
@@ -515,7 +515,7 @@ add_dependencies(ogrebattle64 lua_sandbox_test)
 
 # The content pack hostile-file test, run the same way.
 add_executable(content_pack_test features/content_pack_test.cpp features/content_db.cpp
-    features/content_json.cpp features/content_files.cpp features/class_animation.cpp
+    features/content_json.cpp features/content_files.cpp features/mod_options.cpp features/class_animation.cpp
     features/class_change.cpp)
 target_include_directories(content_pack_test PRIVATE features
     "${OGRE_TOOLS}/N64ModernRuntime/thirdparty"

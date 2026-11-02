@@ -3,7 +3,6 @@
 #include "class_art.hpp"
 #include "lua_runtime.hpp"
 #include "dialogue_autoplay.hpp"
-#include "exp_share.hpp"
 #include "ram_key.hpp"
 #include "screenshot.hpp"
 #include "sdl_platform.hpp"
@@ -909,8 +908,6 @@ void pump_sdl_events(Platform& platform, bool* quit) {
         const int scene = (rdram[0xE810Eu ^ 3u] << 8) | rdram[0xE810Fu ^ 3u];
         ogre::apply_scene_speed(scene, g_fast_forward);
     }
-    // Unit-shared battle EXP (app/features/exp_share.hpp).
-    exp_share::tick(ultramodern_get_rdram_base());
 #ifdef OGRE_HAVE_RMLUI
     // PAUSE ON SELECT: a selected unit on the field holds the game for orders.
     ogre::field_select::update_pause();

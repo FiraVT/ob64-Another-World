@@ -31,7 +31,7 @@ should not go.
   letter, a backslash, another extension and an unknown field.
 
 - **Where it can write.** Only the content tables in guest RAM (classes,
-  attacks, items, consumables, appearances, battle rewards) and the content
+  attacks, spell maps, items, consumables, appearances, battle rewards) and the content
   arena (guest RAM `0x80600000`..`0x806FFFFF`: the moved class and appearance
   tables and the names). A new class's record is written only in the arena
   copy. Every edit is checked against its
@@ -46,12 +46,15 @@ should not go.
   words back at the next strike, the round reset and the battle's end. Every
   class and form is checked before the pack is accepted: a class id 1..164 or
   a new class key, an attack id inside the attack table, 1..9 strikes and
-  attacks, form lists of 1..32 valid classes, `"breath"` as the only attack word, a
-  boolean `repeat`. Fifteen cases in `content_pack_test` cover a rule that is
-  not a list, a missing class, a class past the table, class 0, an attack past
-  the table, no strikes, ten strikes, ten attacks, an unknown field, an empty
-  form list, a list of 33, a list with a class past the table, another attack
-  word and a `repeat` that is not a boolean. A form whose figure
+  attacks, form lists of 1..32 valid classes, attack lists of 1..32 valid
+  attack ids, `"breath"` as the only attack word, a boolean `repeat`. Nineteen
+  cases in `content_pack_test` cover a rule that is not a list, a missing
+  class, a class past the table, class 0, an attack past the table, no
+  strikes, ten strikes, ten attacks, an unknown field, an empty form list, a
+  list of 33, a list with a class past the table, an empty attack list, an
+  attack list of 33, an attack list with an attack past the table, `"breath"`
+  inside an attack list, another attack word and a `repeat` that is not a
+  boolean. A form whose figure
   the battle cannot load is skipped, because the game's draw spins on a missing
   figure.
 - **What it can read.** Only its own file. The port lists `content/` beside the
@@ -74,6 +77,17 @@ should not go.
   so a `file:`, `javascript:` or other scheme, or a value that could split a
   command line, never reaches the system; a mod with any other `"url"` is
   refused. The address is checked again right before it is opened.
+- **Mod options** (`mod.json` `"options"` and `mod-options/<id>.json`,
+  `design-mods.md` section 5.2, `app/features/mod_options.cpp`). A declaration
+  outside the limits (32 options, keys of `a-z0-9_`, names and help without
+  control characters, 2 to 8 choices, whole numbers within ±1,000,000 and at
+  most 1000 steps) refuses the mod. A values file is read as untrusted: larger
+  than 16 KiB, nested deeper than one object or not JSON is ignored, and each
+  value is checked against its declared option, else the default stands. Keys
+  are only compared with the declared ones. The file name is the mod id
+  (`valid_id`: no `/`, `\` or `..` path), with a leading `_` for a Windows
+  device name or a leading `.`, inside `mod-options/`. A script reads only its
+  own mod's options (`options.get`); it cannot write them.
 - **`mod-settings.json`** (the MODS tab's choices, in the settings folder;
   `design-mods.md` section 5). The port writes it, but a player or another
   program can edit it, so it is read as untrusted. Larger than 64 KiB is
@@ -88,8 +102,11 @@ should not go.
 - **Deleting from the MODS tab** (`content::files::erase`). Only the player's
   action deletes, and it asks twice; no pack, script or settings file can
   trigger it. It erases only an item the listing found directly inside
-  `user-content/` (its parent, resolved, must be `user-content/` itself), never
-  `content/`, a file inside a mod folder, or `user-content/` itself. A link is
+  `user-content/` (its parent, resolved, must be `user-content/` itself), or a
+  shipped mod folder with its `mod.json` directly inside `content/` beside the
+  executable; never a loose file in `content/`, `content/` itself, a file
+  inside a mod folder, or `user-content/` itself. `content_pack_test` has a
+  case for each. A link is
   removed as a link; what it points to is kept.
 - **Hostile files.** A file larger than 16 MiB is refused unread. A document
   nested more than 64 levels is refused before parsing, because a very deep
@@ -97,12 +114,30 @@ should not go.
   error, including a value of the wrong type where the loader reads one, is
   caught and refuses the whole file with its reason in the log.
 - **Values.** Each field takes only values that fit its width and sign; names
-  take 1 to 32 printable ASCII characters a line and at most two lines.
+  take 1 to 32 printable ASCII characters a line and at most two lines. A
+  `spells` field takes only an attack 1..158 that is not a generic magic
+  attack (45..54, 145), so a spell map never points past the attack table or
+  back into another map (`spell_target`, checked by `Pack::set_field` for
+  packs, LordlyCaliber projects and Lua alike).
 - **LordlyCaliber added classes.** `addedClasses` takes at most 83 entries
   (the free new class ids), each `record` exactly one class record (72 bytes)
   and each `name` a name in the game's encoding with the same limits. Each
   becomes a new class with a generated key, so its record goes only into the
   arena copy, as a JSON pack's new class does.
+- **LordlyCaliber attacks** (`read_lordlycaliber_attacks`,
+  `design-lordlycaliber-import.md` section 4.1). The section must be version
+  1 with at most 254 entries. Each entry's `data` is exactly 12 bytes of hex
+  and becomes edits of the bytes after the name pointer of an attack 1..158;
+  an entry past 158 is counted and skipped. A `name` is 1..128 bytes of hex,
+  and one the name rules refuse is counted and skipped. Every setting must be
+  an integer; settings are compared and listed, never written. A spell link
+  writes only through `spells` fields, with the value check above. Ten
+  refusal cases in `content_pack_test` cover a wrong version, entries that are
+  not a list, 255 entries, an 11-byte record, a missing record, a name that is
+  not hex, a 129-byte name, spell links that are not an object, a spell link
+  that is not a number and a setting that is not an integer. They run on a
+  synthetic ROM image (zeros, the revision 1 check word and the spell rows),
+  because the importer compares with the ROM's records.
 
 A pack can still change the game in ways its author did not intend, for
 example give a class absurd stats. That is a game problem, not a computer one;
@@ -119,14 +154,27 @@ Only these: the base functions `assert`, `error`, `getmetatable`, `ipairs`,
 `setmetatable`, `tonumber`, `tostring`, `type`, `xpcall`; the `table`,
 `string`, `math` and `utf8` libraries; and the port's API (`log`, `on`,
 `content.*`, `game.*`; `design-lua.md` section 5). The API reads and changes
-content records through the content database (section 2's limits apply),
+content records through the content database (section 2's limits apply,
+including the `spells` value check),
 reads a few game values, and `game.set_class` writes two bytes of one army
 character's record (its class and class key; the character is checked to be
 1..99 and the class to be an existing id or a pack's new class).
 `game.recruit` queues at most eight new army characters, each a class (an
 existing id or a pack's new class) at a level 1..50, which the game's own
 character builder writes into a free army record on the mission field; its
-argument checks are cases in `content_pack_test`.
+argument checks are cases in `content_pack_test`. `game.set_exp` writes one
+byte, the EXP of an army character 1..99, with a value 0..99.
+`game.character`, `game.unit` and `battle.fighter` read a character record
+(1..99), a unit's five member bytes (0..59) and a battle participant (0..19);
+`battle.fighter` reads only while the battle bank is resident and only inside
+RDRAM. Their range checks are `lua_runtime.hpp` `valid_character`,
+`valid_exp`, `valid_unit` and `valid_fighter`, and cases in
+`content_pack_test`. `options.get` reads a value of the script's own mod's
+options and nothing else (section 1, mod options). The filter events
+(`design-lua.md` section 5) return a
+number to the game's code only inside the event's range (an attack 0..158, an
+attack count 0..15, an alignment byte, 1 or 2 places); any other return keeps
+the game's value.
 
 ### 3.2 What a script cannot reach
 
@@ -185,16 +233,19 @@ build; if a case fails, the build fails.
   `file:` keys holding a path, and ten broken or hostile files that must be
   ignored with the defaults loading), `erase` (two deletes inside
   `user-content/` and three refusals outside it: `design-mods.md` section 7),
-  `mod.json` `"url"` (two kept, and nine refused: `file:`, `javascript:`, no
+  mod options (a good declaration read, twenty hostile ones refused, and
+  eleven values-file and session cases), `mod.json` `"url"` (two kept, and nine refused: `file:`, `javascript:`, no
   scheme, a scheme alone, a space, a quote, a control character, 220
-  characters, a number), 54 files, 7 valid and 47 hostile (section 2 lists the fifteen battle form cases), among them: broken JSON, 100,000 levels of nesting, a file over
+  characters, a number), 62 files, 8 valid and 54 hostile (section 2 lists the fifteen battle form cases), among them: seven `spells` refusals (a row past the table, a generic attack, attack 145, attack 0, an attack past the table, an unknown field, a name), broken JSON, 100,000 levels of nesting, a file over
   16 MiB, record ids out of range and negative, values too large, floats, byte
   edits past a record and far outside it, a whole record of the wrong size,
   bad hex, names with control characters, too long, or on a table without
   names, an unknown table, and LordlyCaliber projects with fields of the wrong
   type. Keys for the classes a LordlyCaliber project adds
   (`lordlycaliber_class_key`) are checked to be valid class keys of at most 64
-  characters for odd folder names.
+  characters for odd folder names. Last, on a synthetic ROM image, twenty
+  LordlyCaliber `attacks` cases: ten accepted projects whose edits and
+  `not_applied` lines are checked, and the ten refusals in section 2.
 
 The tests found two holes while they were written (2026-10-31): a finalizer
 with an endless loop hung the test, because Lua runs finalizers with hooks off,

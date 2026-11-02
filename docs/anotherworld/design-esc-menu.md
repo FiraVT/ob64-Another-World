@@ -59,9 +59,10 @@ for a developer run (`feature_enabled` in `settings.cpp`).
 | WAR DIRECTOR | `war_director` | ON | garrison scaling and spawns | `OGRE_DIRECTOR_GARRISON`, `OGRE_DIRECTOR_SPAWN` |
 | LOOT UPGRADES | `loot_upgrades` | ON | drop table upgrade | `OGRE_DIRECTOR_LOOT` |
 | TRAINING CATCH-UP | `training_catch_up` | ON | catch-up training level | `OGRE_TRAINING` |
-| SHARED EXP | `shared_exp` | ON | `exp_share::tick` | `OGRE_SHARED_EXP` |
-| CLASS ALIGNMENT | `class_alignment` | IGNORED | `ogre_alignment_requirement` | `OGRE_CLASS_ALIGNMENT` |
-| LARGE UNITS | (moved from DEBUG) | | | |
+
+SHARED EXP, CLASS ALIGNMENT and LARGE UNITS were removed on 2026-11-01: those
+rules are the Another World mod pack's (`design-another-world-pack.md`), and
+`settings.cfg` lines with their keys are ignored.
 
 `war_director.cpp`, `director_spawn.cpp` and `bank_overlays.cpp` read the
 switches through `app/features/feature_flags.hpp`, which once also served the

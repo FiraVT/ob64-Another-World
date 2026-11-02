@@ -71,6 +71,17 @@ constexpr uint16_t kConsumableCount = 45;
 constexpr uint32_t kAttacks = 0x8018AA9Cu;
 constexpr uint32_t kAttackSize = 0x10u;
 constexpr uint16_t kAttackCount = 159;
+// Spell maps, 8 bytes per row, indexed by element (0..7): the attack a
+// generic magic attack becomes. Rows are attacks 45, 46, 47, 48 and 145
+// (ROM 0x6138C, right after the attack table). func_8016E52C reads them with
+// lbu at 0x8016E94C (row 0), 0x8016E984 (row 1), 0x8016E968 (row 2),
+// 0x8016E9A0 (row 3) and 0x8016EA00 (row 4). Elements 0 and 7 of rows 0..3
+// are not read: element 0 takes the class's front-row attack and element 7
+// takes 99 + item - 249 (organize_view.cpp resolve_attack). LordlyCaliber
+// (attack_data.cpp templateTargets, revision 0 ROM 0x6136C) has the same rows.
+constexpr uint32_t kSpellMaps = 0x8018B48Cu;
+constexpr uint32_t kSpellMapSize = 8u;
+constexpr uint16_t kSpellMapCount = 5;
 // Battle reward table, 8 bytes per row: u16 class, then three u16 outcomes
 // (equipment id | 0x8000, or a consumable id). It is data of bank N (record 7,
 // ROM 0x101D00, the mission field module) at ROM 0x142278, and shares its RAM

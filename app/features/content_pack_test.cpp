@@ -6,22 +6,28 @@
 
 #include "content_db.hpp"
 #include "content_files.hpp"
+#include "lua_runtime.hpp"
+#include "mod_options.hpp"
 #include "recruit.hpp"
 
 #include <algorithm>
 #include <cstdio>
 #include <filesystem>
 #include <fstream>
+#include <functional>
 #include <iterator>
 #include <span>
 #include <string>
 #include <vector>
 
 // The test runs without a ROM: the database stays unloaded, which is how a
-// pack is parsed before the ROM's records exist.
+// pack is parsed before the ROM's records exist. The LordlyCaliber attack
+// cases, which need the ROM's records, run last on a synthetic image
+// (g_rom, run_lordlycaliber_attacks).
+std::vector<uint8_t> g_rom;
 namespace recomp {
 std::span<const uint8_t> get_rom() {
-    return {};
+    return g_rom;
 }
 namespace overlays {
 bool is_function_bank_loaded(uint32_t) {
@@ -87,8 +93,33 @@ std::vector<Case> cases() {
          R"({"battle_forms":[{"class":2,"strikes":[{"form":[57,200]}]}]})", false},
         {"a battle_forms attack word other than breath",
          R"({"battle_forms":[{"class":2,"strikes":[{"attack":"fire"}]}]})", false},
+        {"a battle_forms random attack list is read",
+         R"({"battle_forms":[{"class":2,"repeat":true,"strikes":[{"attack":[4,7,37]}]}]})", true},
+        {"a battle_forms attack list that is empty", R"({"battle_forms":[{"class":2,"strikes":[{"attack":[]}]}]})",
+         false},
+        {"a battle_forms attack list of 33 attacks",
+         R"({"battle_forms":[{"class":2,"strikes":[{"attack":[)" + [] {
+             std::string list;
+             for (int i = 0; i < 33; i++) {
+                 list += (i ? "," : "") + std::string("4");
+             }
+             return list;
+         }() + R"(]}]}]})",
+         false},
+        {"a battle_forms attack list with an attack past the table",
+         R"({"battle_forms":[{"class":2,"strikes":[{"attack":[4,159]}]}]})", false},
+        {"a battle_forms attack list holding breath",
+         R"({"battle_forms":[{"class":2,"strikes":[{"attack":[4,"breath"]}]}]})", false},
         {"a battle_forms repeat that is not a boolean",
          R"({"battle_forms":[{"class":2,"repeat":1,"strikes":[{}]}]})", false},
+        {"a spells edit is read", R"({"spells":{"0":{"wind":57,"bane":93},"4":{"physical":5}}})", true},
+        {"a spells row past the table", R"({"spells":{"5":{"wind":57}}})", false},
+        {"a spell that is a generic attack", R"({"spells":{"0":{"wind":46}}})", false},
+        {"a spell that is attack 145", R"({"spells":{"1":{"fire":145}}})", false},
+        {"a spell of attack 0", R"({"spells":{"0":{"wind":0}}})", false},
+        {"a spell past the attack table", R"({"spells":{"0":{"wind":159}}})", false},
+        {"a spells field the port does not know", R"({"spells":{"0":{"element_7":57}}})", false},
+        {"a name for the spells table", R"({"spells":{"0":{"name":"x"}}})", false},
         {"broken JSON", R"({"classes":)", false},
         {"a document 100000 levels deep", nested(100000), false},
         {"a file over the size limit", std::string(kMaxPackFileSize + 1, ' '), false},
@@ -376,6 +407,47 @@ int run_mod_settings() {
     outside.path = user;
     check(!files::erase(outside, erase_error) && std::filesystem::exists(user),
           "erase refuses user-content/ itself", erase_error);
+    // Shipped mods: a mod folder directly inside content/ can be deleted; a
+    // loose file there, content/ itself and a folder without mod.json cannot.
+    write(base / "content" / "aw" / "mod.json", R"({"id":"aw"})");
+    write(base / "content" / "aw" / "rules.lua", "");
+    listing = files::scan();
+    const files::Mod* aw = find(listing, "aw");
+    check(aw != nullptr && aw->shipped && files::erase(*aw, erase_error) &&
+              !std::filesystem::exists(base / "content" / "aw"),
+          "erase deletes a shipped mod folder in content/", erase_error);
+    // The MODS tab keeps a deleted shipped mod OFF; an update that puts the
+    // folder back then lists it off.
+    {
+        std::string read_error;
+        files::Settings kept = files::read_settings(read_error);
+        kept.enabled["aw"] = false;
+        files::write_settings(kept);
+        write(base / "content" / "aw" / "mod.json", R"({"id":"aw"})");
+        listing = files::scan();
+        const files::Mod* back = find(listing, "aw");
+        check(back != nullptr && back->shipped && !back->enabled,
+              "a deleted shipped mod that an update puts back stays off", "");
+        std::filesystem::remove_all(base / "content" / "aw", ec);
+        kept.enabled.erase("aw");
+        files::write_settings(kept);
+    }
+    files::Mod shipped;
+    shipped.shipped = true;
+    shipped.kind = files::ModKind::Folder;
+    shipped.path = base / "content" / "shipped.json";
+    check(!files::erase(shipped, erase_error) && std::filesystem::exists(shipped.path),
+          "erase refuses a loose file in content/", erase_error);
+    shipped.path = base / "content";
+    check(!files::erase(shipped, erase_error) && std::filesystem::exists(shipped.path),
+          "erase refuses content/ itself", erase_error);
+    write(base / "content" / "no-manifest" / "pack.json", "{}");
+    shipped.path = base / "content" / "no-manifest";
+    check(!files::erase(shipped, erase_error) && std::filesystem::exists(shipped.path),
+          "erase refuses a content/ folder without mod.json", erase_error);
+    shipped.path = user / "a";
+    check(!files::erase(shipped, erase_error) && std::filesystem::exists(shipped.path),
+          "erase refuses a shipped item outside content/", erase_error);
 
     files::Settings written;
     written.order = {"b", "a"};
@@ -432,6 +504,111 @@ int run_mod_urls() {
         std::printf("%s  a mod.json url (%s) is %s\n", pass ? "pass" : "FAIL", u.folder,
                     u.accept ? "kept" : "refused");
     }
+    std::filesystem::remove_all(base, ec);
+    return failed;
+}
+
+// Mod options (mod_options.hpp; security.md section 1): a mod.json "options"
+// list outside the limits refuses the mod, and a values file never gives a
+// script a value its option does not allow.
+int run_mod_options() {
+    namespace files = ogre::content::files;
+    namespace mo = ogre::mod_options;
+    const std::filesystem::path base = ogre::host::exe_dir();
+    std::error_code ec;
+    std::filesystem::remove_all(base, ec);
+    int failed = 0;
+    const auto check = [&failed](bool pass, const std::string& name) {
+        failed += pass ? 0 : 1;
+        std::printf("%s  %s\n", pass ? "pass" : "FAIL", name.c_str());
+    };
+    const std::string good = R"([{"key":"on","name":"ON","type":"toggle","default":true},)"
+                             R"({"key":"pace","name":"PACE","type":"choice","choices":["SLOW","FAST"],"default":"FAST"},)"
+                             R"({"key":"bonus","name":"BONUS","type":"number","min":0,"max":50,"step":5,"default":10,"restart":true}])";
+    struct Decl {
+        const char* folder;
+        std::string options;  // the "options" value as JSON
+        bool accept;
+    };
+    std::string many = "[";
+    for (int i = 0; i < 33; i++) {
+        many += std::string(i ? "," : "") + R"({"key":"k)" + std::to_string(i) +
+                R"(","name":"K","type":"toggle","default":false})";
+    }
+    many += "]";
+    const Decl decls[] = {
+        {"good", good, true},
+        {"not-a-list", R"({"key":"on"})", false},
+        {"too-many", many, false},
+        {"bad-key", R"([{"key":"../x","name":"X","type":"toggle","default":true}])", false},
+        {"upper-key", R"([{"key":"On","name":"X","type":"toggle","default":true}])", false},
+        {"twice", R"([{"key":"a","name":"A","type":"toggle","default":true},{"key":"a","name":"B","type":"toggle","default":true}])", false},
+        {"no-name", R"([{"key":"a","type":"toggle","default":true}])", false},
+        {"long-name", R"([{"key":"a","name":")" + std::string(41, 'N') + R"(","type":"toggle","default":true}])", false},
+        {"control-help", R"([{"key":"a","name":"A","help":"x\u0007","type":"toggle","default":true}])", false},
+        {"no-default", R"([{"key":"a","name":"A","type":"toggle"}])", false},
+        {"wrong-default", R"([{"key":"a","name":"A","type":"toggle","default":1}])", false},
+        {"unknown-type", R"([{"key":"a","name":"A","type":"text","default":""}])", false},
+        {"one-choice", R"([{"key":"a","name":"A","type":"choice","choices":["X"],"default":"X"}])", false},
+        {"choice-twice", R"([{"key":"a","name":"A","type":"choice","choices":["X","X"],"default":"X"}])", false},
+        {"choice-default", R"([{"key":"a","name":"A","type":"choice","choices":["X","Y"],"default":"Z"}])", false},
+        {"min-max", R"([{"key":"a","name":"A","type":"number","min":5,"max":5,"default":5}])", false},
+        {"huge-range", R"([{"key":"a","name":"A","type":"number","min":0,"max":5000,"default":0}])", false},
+        {"off-step", R"([{"key":"a","name":"A","type":"number","min":0,"max":10,"step":3,"default":0}])", false},
+        {"default-off-step", R"([{"key":"a","name":"A","type":"number","min":0,"max":10,"step":5,"default":3}])", false},
+        {"float", R"([{"key":"a","name":"A","type":"number","min":0,"max":1.5,"default":0}])", false},
+        {"restart-text", R"([{"key":"a","name":"A","type":"toggle","default":true,"restart":"yes"}])", false},
+    };
+    for (const Decl& d : decls) {
+        write(base / "user-content" / d.folder / "mod.json",
+              std::string(R"({"id":")") + d.folder + R"(","options":)" + d.options + "}");
+    }
+    const files::Listing listing = files::scan();
+    for (const Decl& d : decls) {
+        const auto found = std::find_if(listing.mods.begin(), listing.mods.end(), [&](const files::Mod& m) {
+            return m.folder == std::string("user-content/") + d.folder;
+        });
+        const bool loaded = found != listing.mods.end() && found->error.empty() && !found->options.empty();
+        const bool refused = found != listing.mods.end() && !found->error.empty() && found->options.empty();
+        check(d.accept ? loaded : refused,
+              std::string("mod options (") + d.folder + ") are " + (d.accept ? "read" : "refused") +
+                  (found != listing.mods.end() && !found->error.empty() ? ": " + found->error : ""));
+    }
+
+    std::vector<mo::Option> options;
+    std::string error;
+    mo::parse(nlohmann::json::parse(good), options, error);
+    const auto values = [&](const std::string& text) {
+        std::filesystem::create_directories(mo::values_path("good").parent_path(), ec);
+        write(mo::values_path("good"), text);
+        return mo::read_values("good", options);
+    };
+    auto v = values("");
+    check(v["on"] == 1 && v["pace"] == 1 && v["bonus"] == 10, "no values file: every option at its default");
+    v = values(R"({"on":false,"pace":"SLOW","bonus":45})");
+    check(v["on"] == 0 && v["pace"] == 0 && v["bonus"] == 45, "a values file is read");
+    v = values(R"({"on":"no","pace":"MEDIUM","bonus":7})");
+    check(v["on"] == 1 && v["pace"] == 1 && v["bonus"] == 10, "values of the wrong type or off the list read as defaults");
+    v = values(R"({"bonus":500})");
+    check(v["bonus"] == 10, "a number past max reads as the default");
+    v = values(R"({"on":false,"other":{"x":[[1]]}})");
+    check(v["on"] == 1, "a values file nested deeper than one level is ignored");
+    v = values("{" + std::string(20000, ' ') + "}");
+    check(v["on"] == 1, "a values file larger than 16 KiB is ignored");
+    v = values("not json");
+    check(v["on"] == 1, "a broken values file is ignored");
+    values("");
+    check(mo::write_value("good", options, "bonus", 25) && mo::read_values("good", options)["bonus"] == 25,
+          "write_value stores a valid value");
+    check(!mo::write_value("good", options, "bonus", 26), "write_value refuses a value off the step");
+    check(!mo::write_value("good", options, "other", 1), "write_value refuses a key the mod does not declare");
+    check(mo::values_path("con").filename() == "_con.json" && mo::values_path("nul.x").filename() == "_nul.x.json" &&
+              mo::values_path(".hidden").filename() == "_.hidden.json" &&
+              mo::values_path("my-mod").filename() == "my-mod.json",
+          "a values file name is never a device name or a hidden file");
+    check(mo::session_peek("good", options[2], 25) == 25 && mo::session_value("good", options[2], 25) == 25 &&
+              mo::session_value("good", options[2], 40) == 25 && mo::session_peek("good", options[2], 40) == 25,
+          "a restart option keeps its first value in the session");
     std::filesystem::remove_all(base, ec);
     return failed;
 }
@@ -514,6 +691,118 @@ int run_lordlycaliber_keys() {
     return failed;
 }
 
+// LordlyCaliber's "attacks" section (content_json.cpp
+// read_lordlycaliber_attacks) on a synthetic ROM: zeros, the revision 1 check
+// word (class 1's name pointer) and the five spell rows as the ROM holds them
+// (game_addresses.hpp kSpellMaps). Runs last: after it the database is loaded.
+int run_lordlycaliber_attacks() {
+    g_rom.assign(0x200000, 0);
+    const auto put = [](uint32_t vram, std::initializer_list<uint8_t> bytes) {
+        std::copy(bytes.begin(), bytes.end(), g_rom.begin() + (vram - 0x8016AF80u + 0x40E80u));
+    };
+    put(0x80187C34u + 0x48u, {0x80, 0x19, 0x03, 0x88});
+    put(0x8018B48Cu, {0xFF, 55, 63, 71, 79, 87, 91, 0, 0xFF, 57, 65, 73, 81, 89, 93, 0, 0xFF, 59, 67, 75, 83, 87, 95,
+                      0, 0xFF, 60, 68, 76, 84, 154, 96, 0, 146, 147, 148, 149, 150, 151, 152, 0});
+    if (!load()) {
+        std::printf("FAIL  the database loads the synthetic ROM\n");
+        return 1;
+    }
+    // Entries from attack 1; `at` puts an entry at an attack id, the rest are
+    // the synthetic ROM's records (12 zero bytes).
+    const auto project = [](std::initializer_list<std::pair<int, std::string>> at, int count = 158) {
+        std::string entries;
+        for (int id = 1; id <= count; id++) {
+            std::string entry = R"({"data":"000000000000000000000000"})";
+            for (const auto& [where, text] : at) {
+                entry = where == id ? text : entry;
+            }
+            entries += (id > 1 ? "," : "") + entry;
+        }
+        return R"({"format":"LordlyCaliberProject","version":1,"attacks":{"version":1,"entries":[)" + entries + "]}}";
+    };
+    const auto spell_edit = [](const Pack& pack, uint16_t row, uint16_t offset, uint8_t value) {
+        return std::any_of(pack.edits.begin(), pack.edits.end(), [&](const Edit& e) {
+            return e.table == Table::Spells && e.id == row && e.offset == offset && e.bytes == std::vector<uint8_t>{value};
+        });
+    };
+    const auto lists = [](const Pack& pack, std::string_view text) {
+        return std::any_of(pack.not_applied.begin(), pack.not_applied.end(),
+                           [&](const std::string& s) { return s.find(text) != std::string::npos; });
+    };
+    const std::string zero = R"("data":"000000000000000000000000")";
+    struct Check {
+        const char* name;
+        std::string text;
+        bool accept;
+        std::function<bool(const Pack&)> expect;
+    };
+    const Check checks[] = {
+        {"a LordlyCaliber spell link becomes a spells edit",
+         project({{45, "{" + zero + R"(,"spellLinks":{"63":57}})"}}), true,
+         [&](const Pack& p) { return spell_edit(p, 0, 2, 57) && p.edits.size() == 1; }},
+        {"a LordlyCaliber spell link of attack 145 reads element 0",
+         project({{145, "{" + zero + R"(,"spellLinks":{"146":5}})"}}), true,
+         [&](const Pack& p) { return spell_edit(p, 4, 0, 5); }},
+        {"a LordlyCaliber spell link to a generic attack is listed, not applied",
+         project({{45, "{" + zero + R"(,"spellLinks":{"63":46}})"}}), true,
+         [&](const Pack& p) { return p.edits.empty() && lists(p, "1 spell array"); }},
+        {"a LordlyCaliber item spell link is listed, not applied",
+         project({{45, "{" + zero + R"(,"spellLinks":{"99":57}})"}}), true,
+         [&](const Pack& p) { return p.edits.empty() && lists(p, "1 spell array"); }},
+        {"a LordlyCaliber spell link of a non-generic attack is listed",
+         project({{5, "{" + zero + R"(,"spellLinks":{"63":57}})"}}), true,
+         [&](const Pack& p) { return p.edits.empty() && lists(p, "1 spell array"); }},
+        {"a LordlyCaliber attack record edit", project({{7, R"({"data":"010700000000000000000000"})"}}), true,
+         [&](const Pack& p) {
+             return p.edits.size() == 1 && p.edits[0].table == Table::Attacks && p.edits[0].id == 7 &&
+                    p.edits[0].offset == 4 && p.edits[0].bytes == std::vector<uint8_t>{0x01, 0x07};
+         }},
+        {"LordlyCaliber attack settings are listed, not applied",
+         project({{7, "{" + zero + R"(,"behavior":5,"playback":1,"powerPercent":100})"}}), true,
+         [&](const Pack& p) { return lists(p, "behavior, playback) of 1 attacks"); }},
+        {"a LordlyCaliber added attack is listed", project({}, 159), true,
+         [&](const Pack& p) { return lists(p, "1 added attacks"); }},
+        {"a LordlyCaliber edited visual is listed",
+         project({{7, "{" + zero + R"(,"visual":{"nativeEffect":3,"delay":0}})"}}), true,
+         [&](const Pack& p) { return lists(p, "edited visuals of 1"); }},
+        {"a LordlyCaliber attack name is read", project({{7, "{" + zero + R"(,"name":"41424344"})"}}), true,
+         [&](const Pack& p) { return p.names.size() == 1 && p.names[0].table == Table::Attacks && p.names[0].id == 7; }},
+        {"LordlyCaliber attacks of version 2",
+         R"({"format":"LordlyCaliberProject","version":1,"attacks":{"version":2,"entries":[]}})", false, nullptr},
+        {"LordlyCaliber attack entries that are not a list",
+         R"({"format":"LordlyCaliberProject","version":1,"attacks":{"version":1,"entries":{}}})", false, nullptr},
+        {"255 LordlyCaliber attack entries", project({}, 255), false, nullptr},
+        {"a LordlyCaliber attack record of 11 bytes", project({{7, R"({"data":"0000000000000000000000"})"}}), false,
+         nullptr},
+        {"a LordlyCaliber attack entry with no data", project({{7, R"({"name":"41"})"}}), false, nullptr},
+        {"a LordlyCaliber attack name that is not hex", project({{7, "{" + zero + R"(,"name":"zz"})"}}), false,
+         nullptr},
+        {"a LordlyCaliber attack name of 129 bytes",
+         project({{7, "{" + zero + R"(,"name":")" + std::string(258, '4') + R"("})"}}), false, nullptr},
+        {"LordlyCaliber spell links that are not an object",
+         project({{45, "{" + zero + R"(,"spellLinks":[1]})"}}), false, nullptr},
+        {"a LordlyCaliber spell link that is not a number",
+         project({{45, "{" + zero + R"(,"spellLinks":{"63":"x"}})"}}), false, nullptr},
+        {"a LordlyCaliber attack setting that is not an integer",
+         project({{7, "{" + zero + R"(,"chance":"all"})"}}), false, nullptr},
+    };
+    int failed = 0;
+    for (const Check& c : checks) {
+        std::string error;
+        std::optional<Pack> pack;
+        try {
+            pack = parse_pack(c.text, "user-content/test/project.json", error);
+        } catch (...) {
+            error = "an exception left parse_pack";
+        }
+        const bool pass = pack.has_value() == c.accept && (!pack || !c.expect || c.expect(*pack));
+        failed += pass ? 0 : 1;
+        std::printf("%s  %s%s%s\n", pass ? "pass" : "FAIL", c.name, error.empty() ? "" : ": ",
+                    error.substr(0, 80).c_str());
+    }
+    return failed;
+}
+
 }  // namespace
 
 int main(int argc, char** argv) {
@@ -539,6 +828,7 @@ int main(int argc, char** argv) {
     failed += run_mod_folders();
     failed += run_mod_settings();
     failed += run_mod_urls();
+    failed += run_mod_options();
     if (argc > 1) {
         failed += run_examples(argv[1]);
     }
@@ -564,6 +854,37 @@ int main(int argc, char** argv) {
         failed += pass ? 0 : 1;
         std::printf("%s  %s\n", pass ? "pass" : "FAIL", r.name);
     }
+    // The checks of game.character, game.set_exp, game.unit and battle.fighter
+    // (lua_runtime.hpp; security.md section 3.1).
+    struct Range {
+        const char* name;
+        bool (*check)(int64_t);
+        int64_t value;
+        bool accept;
+    };
+    const Range ranges[] = {
+        {"character 1", ogre::lua::valid_character, 1, true},
+        {"character 99", ogre::lua::valid_character, 99, true},
+        {"character 0 (the record before the army)", ogre::lua::valid_character, 0, false},
+        {"character 100 (past the army)", ogre::lua::valid_character, 100, false},
+        {"a huge character", ogre::lua::valid_character, int64_t{1} << 40, false},
+        {"EXP 0", ogre::lua::valid_exp, 0, true},
+        {"EXP 99", ogre::lua::valid_exp, 99, true},
+        {"EXP 100 (a level's worth)", ogre::lua::valid_exp, 100, false},
+        {"EXP -1", ogre::lua::valid_exp, -1, false},
+        {"unit 59", ogre::lua::valid_unit, 59, true},
+        {"unit 60 (past the unit table)", ogre::lua::valid_unit, 60, false},
+        {"unit -1", ogre::lua::valid_unit, -1, false},
+        {"fighter 19", ogre::lua::valid_fighter, 19, true},
+        {"fighter 20 (past the participants)", ogre::lua::valid_fighter, 20, false},
+        {"fighter -1", ogre::lua::valid_fighter, -1, false},
+    };
+    for (const Range& r : ranges) {
+        const bool pass = r.check(r.value) == r.accept;
+        failed += pass ? 0 : 1;
+        std::printf("%s  game API: %s is %s\n", pass ? "pass" : "FAIL", r.name, r.accept ? "accepted" : "refused");
+    }
+    failed += run_lordlycaliber_attacks();
     std::printf("Content pack hostile-file test: %d failed\n", failed);
     return failed == 0 ? 0 : 1;
 }

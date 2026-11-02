@@ -98,10 +98,14 @@ constexpr int SLOTS = 60;
 constexpr int MAX_LOCATIONS = 64;
 constexpr int REAIM_EVERY = 24;
 
-// Object flags (field_view.cpp): 0x11 on the map, 0x20 shown, 0x80000000
-// beaten.
+// Object flags (field_view.cpp): 0x11 on the map, 0x20 shown, 0x02 marching
+// (field_select.cpp next_idle), 0x80000000 beaten.
 constexpr uint32_t SHOWN = 0x20u;
+constexpr uint32_t MARCHING = 0x02u;
 constexpr uint32_t BEATEN = 0x80000000u;
+// A hand order whose unit was never seen marching counts as finished after
+// this many field updates (a move the game refused).
+constexpr int ERRAND_SETTLE_UPDATES = 60;
 
 constexpr double DECIDE_HOURS = 2.0;
 // Between two waves of an assault. Enemy units keep lost HP between battles
@@ -338,12 +342,23 @@ struct Assault {
     int target_hp = 0;               // the target's HP at the last decision
 };
 
+struct Errand {
+    bool marched = false;  // the unit has been seen marching since the order
+    int updates = 0;       // field updates since the order
+};
+
 struct State {
     int mission = -1;
     double next_decision = 0.0;
     int reaim = 0;
     std::map<int, Order> orders;
     std::set<int> released;  // units the player took back
+    // The released units on a hand move, pursue or Return: each goes back to
+    // the AI when the order finishes (finish_errands). A Stop keeps a unit
+    // released until the card's AI button hands it back or a later order
+    // finishes.
+    std::map<int, Errand> errands;
+    std::set<int> kept;  // taken with the card's AI button: no order returns them
     Assault assault;
     double towns_done_at = -1.0;  // when no town was left to take
 };
@@ -957,6 +972,35 @@ void reaim(uint8_t* rdram, recomp_context* ctx) {
     }
 }
 
+// A hand order is finished when its unit has stopped marching and has no
+// chase: a move or Return arrived, or a pursuit ended. The unit goes back to
+// the AI. Caller holds g_mutex.
+void finish_errands(const uint8_t* rdram, const std::vector<bool>& chasing) {
+    for (auto it = g.errands.begin(); it != g.errands.end();) {
+        const int slot = it->first;
+        Errand& e = it->second;
+        e.updates++;
+        const bool gone = !on_map(rdram, slot);
+        const bool marching = !gone && (rd32(rdram, object_of(rdram, slot)) & MARCHING) != 0;
+        e.marched = e.marched || marching;
+        const bool settled = e.marched || e.updates >= ERRAND_SETTLE_UPDATES;
+        if (gone || (settled && !marching && !chasing[slot])) {
+            g.released.erase(slot);
+            g.next_decision = 0.0;  // decide at the next field update
+            std::fprintf(stderr, "[autocmd] unit %d finished its order (%s); the AI commands it again\n", slot + 1,
+                         gone ? "off the map" : "arrived");
+            if (!gone) {
+                alerts::post(alerts::Kind::Info,
+                             "Unit " + std::to_string(slot + 1) + " finished your order; the AI commands it again.");
+            }
+            it = g.errands.erase(it);
+        }
+        else {
+            ++it;
+        }
+    }
+}
+
 void tick(uint8_t* rdram, recomp_context* ctx) {
     // One line each time the gate opens or closes, with the values it read.
     static int last_gate = -1;
@@ -974,16 +1018,20 @@ void tick(uint8_t* rdram, recomp_context* ctx) {
     // The selection first: field_select's lock is taken before this file's
     // (its commands call toggle_units under it), never after.
     const std::vector<int> selection = field_select::selected();
+    std::vector<bool> chasing(PLAYER_UNITS);
+    for (int s = 0; s < PLAYER_UNITS; s++) {
+        chasing[s] = field_select::chase_target(s) >= 0;
+    }
     std::lock_guard<std::mutex> lock(g_mutex);
     const double hours = now_hours(rdram);
     const int mission = rd8(rdram, MISSION_INDEX);
     if (g.mission != mission) {
-        const std::set<int> released = g.released;
+        // A new mission starts with every unit the AI's.
         g = State{};
         g.mission = mission;
-        g.released = released;  // a unit taken back stays the player's
         g.next_decision = hours + 1.0;  // the field settles first
     }
+    finish_errands(rdram, chasing);
     // A unit the player took back or selected is dropped from the orders, so a
     // chase never re-aims it.
     for (auto it = g.orders.begin(); it != g.orders.end();) {
@@ -1015,27 +1063,40 @@ bool on() {
 bool toggle() {
     const bool now = !on();
     set_choice(Choice::AutoCommander, now ? 1 : 0);
-    if (!now) {
+    {
         // Off: every unit keeps its current destination and nothing more is
-        // ordered. The next start decides afresh.
+        // ordered. On: the AI commands every unit again. Either way the next
+        // start decides afresh.
         std::lock_guard<std::mutex> lock(g_mutex);
         g.orders.clear();
         g.assault = Assault{};
         g.next_decision = 0.0;
+        g.released.clear();
+        g.errands.clear();
+        g.kept.clear();
     }
     std::fprintf(stderr, "[autocmd] %s\n", now ? "on" : "off");
     alerts::post(alerts::Kind::Info, now ? "Auto commander on." : "Auto commander off: the army is yours.");
     return now;
 }
 
-void player_ordered(int slot) {
+void player_ordered(int slot, bool stop) {
     if (!on()) {
         return;
     }
     std::lock_guard<std::mutex> lock(g_mutex);
-    if (g.released.insert(slot).second) {
-        g.orders.erase(slot);
-        alerts::post(alerts::Kind::Info, "Unit " + std::to_string(slot + 1) + " follows your orders now (AI button hands it back).");
+    const bool was_ai = g.released.insert(slot).second;
+    g.orders.erase(slot);
+    if (stop) {
+        g.errands.erase(slot);
+    }
+    else if (g.kept.count(slot) == 0) {
+        g.errands[slot] = Errand{};  // a new order restarts the errand
+    }
+    if (was_ai) {
+        alerts::post(alerts::Kind::Info, "Unit " + std::to_string(slot + 1) +
+                                             (stop ? " follows your orders now (AI button hands it back)."
+                                                   : " follows your order; the AI takes it back when it is done."));
     }
 }
 
@@ -1043,12 +1104,15 @@ void toggle_units(const std::vector<int>& slots) {
     std::lock_guard<std::mutex> lock(g_mutex);
     const bool all_ai = std::none_of(slots.begin(), slots.end(), [](int s) { return g.released.count(s) != 0; });
     for (int s : slots) {
+        g.errands.erase(s);
         if (all_ai) {
             g.released.insert(s);
+            g.kept.insert(s);
             g.orders.erase(s);
         }
         else {
             g.released.erase(s);
+            g.kept.erase(s);
         }
     }
     g.next_decision = 0.0;  // decide at the next field update

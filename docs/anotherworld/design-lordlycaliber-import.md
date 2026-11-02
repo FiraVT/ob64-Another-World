@@ -1,8 +1,9 @@
 # Design: one content format, LordlyCaliber as an importer
 
 Status: plan, 2026-11-01. Built: what `design-content-database.md` section 8
-records (tier 1 records and names), and steps 2 and 3 (section 5.1), checked
-by the pack test and not played.
+records (tier 1 records and names), steps 2 and 3 (section 5.1), and the
+first part of the attacks section (section 4.1), checked by the pack test and
+not played.
 
 Related: `design-ecosystem.md` (who owns what), `design-content-database.md`
 (the pack model and the existing LordlyCaliber reader),
@@ -93,6 +94,39 @@ Read from rempred/LordlyCaliber `native/engine/project.cpp` and
 | battle animation | `animationRoutes` | tier 4; `class_animation.cpp` copies `copy_of`'s entry today |
 
 Items get the same table when new item ids exist (ecosystem phase E).
+
+### 4.1 Mapping table: attacks
+
+LordlyCaliber's `attacks` section (`native/engine/attack_data.cpp`,
+`AttackData::json`, read at v0.5.45 on 2026-11-01) is `{"version": 1,
+"entries": [...]}`, one entry per attack from id 1. LordlyCaliber applies most
+of an entry through its own ROM hooks on revision 0 (its
+`native/game/attacks/hooks.json` lists 40). `tools/revmap.py` places each
+hooked function at revision 1 RAM + 0x20 for banks C and X and - 0x20 for
+segment B; for example `lc_attack_spell_index` is in `func_ovlC_801BDFDC`,
+`lc_attack_resolve` in `func_8016E52C`, `lc_attack_targets` in
+`func_ovlX_801F5AE4` and `lc_attack_amount` in `func_ovlX_801F36CC`.
+
+| LordlyCaliber (`entries[id - 1]`) | port | status |
+|---|---|---|
+| `data` (record bytes `+0x04..+0x0F`) | `attacks.<id>` record edits, the bytes that differ from the ROM's | built; both revisions hold the same 12 bytes for all 158 attacks (checked on the two ROMs) |
+| `name`, `dynamicName` | the attack's name | built; a name equal to the ROM's is skipped; `dynamicName` on an attack the ROM names is listed. The ROM's dynamic attacks (45..48, 51..54, 145) point at an empty name at `0x8018FED8` |
+| `spellLinks` of 45..48 and 145, when `behavior` is the attack's own id | `spells` (new table, `0x8018B48C`, 5 rows x 8 bytes, a field per element) | built. A link maps the attack the row resolves to (for example 63, attack 45's fire spell) to a replacement; the importer writes every element slot of the row that holds that attack. `func_8016E52C` reads the rows (lbu at `0x8016E94C`, `0x8016E968`, `0x8016E984`, `0x8016E9A0`, `0x8016EA00`), and the ROM bytes match LordlyCaliber's `templateTargets` |
+| `spellLinks` for the item branch (99..102), for 49..54, or to an attack past 158 | none: the targets are constants in `func_8016E52C`'s code or ids the port has not got | listed; needs a hook at the resolver |
+| entries past 158 (added attacks) | none: the port's attack table holds the ROM's 159 | listed |
+| `behavior`, `animation` | none | listed; LordlyCaliber runs the source attack's code path and effect |
+| `targetPattern` (0 retail, up to 12 incl. the 3x3 pattern), `targetSide`, `targetMask` | none | listed; LordlyCaliber hooks the target routine (`func_ovlX_801F5AE4` in revision 1) |
+| `playback` (1: one strike hits all targets) | none | listed; the largest of these, in the battle's strike code beside the battle form hooks |
+| `powerPercent` | none | listed; amount hook (`func_ovlX_801F36CC`) |
+| `status`, `condition`, `chance` (status 7 with condition 2: undead slaying on a killing blow) | none | listed |
+| `afterEffect`, `afterBasis`, `afterPercent` | none | listed |
+| `visual` | none | listed when `AttackVisual::modified` would be true |
+
+A setting is listed when it differs from LordlyCaliber's retail value
+(`struct Attack` in `attack_data.h`: `behavior` and `animation` the attack's
+own id, `powerPercent` 100, `status` -1, `condition` 1, `chance` 100,
+`afterEffect` -1, `afterPercent` 100, the rest 0). The `not_applied` line
+names the settings and the number of attacks.
 
 ## 5. Steps
 

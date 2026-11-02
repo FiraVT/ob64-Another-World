@@ -911,9 +911,12 @@ void Panel::rebuild_rows() {
 }
 
 // --- content mods (MODS tab) ---------------------------------------------------
-// One table of what the player put into user-content/: mod folders, loose packs
-// and scripts, and LordlyCaliber folders (content_files.hpp ModKind), in load
-// order. The listing is read again here rather than taken from the content
+// One table of the mods in load order: first the mod folders shipped in
+// content/ (the Another World pack, design-another-world-pack.md), then what the
+// player put into user-content/: mod folders, loose packs and scripts, and
+// LordlyCaliber folders (content_files.hpp ModKind). A shipped mod moves only
+// within its group. Deleting one keeps it OFF in mod-settings.json, so an
+// update that puts the folder back leaves it off. The listing is read again here rather than taken from the content
 // database, so a change the player just made shows at once; the database reads
 // the same file within a second and then reports its conflicts and errors, and
 // poll_content rebuilds the rows. While the game runs, the database's held
@@ -978,9 +981,6 @@ void Panel::load_content_mods() {
     };
     content_mods_.clear();
     for (const files::Mod& mod : listing.mods) {
-        if (mod.shipped) {
-            continue;  // content/ is the game's own, not the player's
-        }
         ContentModView view;
         view.mod = mod;
         int conflicts = 0;
@@ -1081,6 +1081,15 @@ void Panel::load_content_mods() {
         if (!mod.error.empty()) {
             view.info.emplace_back(mod.error.starts_with("requires ") ? "MISSING" : "REFUSED", mod.error);
         }
+        if (mod.shipped) {
+            std::string text = "Comes with the game in content/. Its rules change what a save holds, so turning it on "
+                               "or off applies at the next start. Once it is off and the game restarted, DELETE erases "
+                               "it; if an update puts it back, it stays OFF.";
+            if (mod.pending) {
+                text += std::string(" Until then it stays ") + (mod.enabled ? "ON." : "OFF.");
+            }
+            view.info.emplace_back("SHIPPED", text);
+        }
         if (const auto count = classes.find(mod.id); count != classes.end()) {
             std::string text = "Adds " + std::to_string(count->second) +
                                (count->second == 1 ? " new class" : " new classes") +
@@ -1092,6 +1101,9 @@ void Panel::load_content_mods() {
             view.info.emplace_back("NEW CLASSES", text);
         }
         view.info.insert(view.info.end(), lines.begin(), lines.end());
+        if (!mod.options.empty() && !mod.id.empty()) {
+            view.values = mod_options::read_values(mod.id, mod.options);
+        }
         content_mods_.push_back(std::move(view));
     }
 }
@@ -1139,7 +1151,9 @@ void Panel::set_content_mod(content::files::Settings& settings, const content::f
 }
 
 void Panel::reorder_content_mod(size_t from, size_t to) {
-    if (from >= content_mods_.size() || to >= content_mods_.size() || from == to) {
+    // A mod moves only within its group: shipped mods always load first.
+    if (from >= content_mods_.size() || to >= content_mods_.size() || from == to ||
+        content_mods_[from].mod.shipped != content_mods_[to].mod.shipped) {
         return;
     }
     std::vector<std::string> ids;
@@ -1194,7 +1208,11 @@ void Panel::delete_content_mod(size_t which) {
     }
     mod_message_ = "Deleted " + mod.folder + ".";
     open_content_mods_.erase(mod.folder);
-    if (!mod.id.empty()) {
+    if (mod.shipped) {
+        // An update puts a shipped mod back; the kept OFF leaves it off.
+        mod_message_ += " If an update puts it back, it stays OFF.";
+        change_mod_settings([&mod](content::files::Settings& settings) { settings.enabled[mod.id] = false; });
+    } else if (!mod.id.empty()) {
         change_mod_settings([&mod](content::files::Settings& settings) {
             settings.enabled.erase(mod.id);
             settings.order.erase(std::remove(settings.order.begin(), settings.order.end(), mod.id),
@@ -1221,8 +1239,8 @@ RowAction Panel::use_content_cell(size_t index, int cell) {
         erase_armed_.clear();
         mod_message_.clear();
     }
-    mod_cell_ = std::clamp(cell, kCellSwitch, kCellDelete);
     const content::files::Mod mod = content_mods_[which].mod;
+    mod_cell_ = std::clamp(cell, kCellSwitch, kCellDelete);
     switch (mod_cell_) {
         case kCellSwitch:
             if (mod.id.empty()) {
@@ -1242,7 +1260,8 @@ RowAction Panel::use_content_cell(size_t index, int cell) {
         case kCellUp:
         case kCellDown: {
             const int to = static_cast<int>(which) + (mod_cell_ == kCellUp ? -1 : 1);
-            if (to < 0 || to >= static_cast<int>(content_mods_.size())) {
+            if (to < 0 || to >= static_cast<int>(content_mods_.size()) ||
+                content_mods_[static_cast<size_t>(to)].mod.shipped != mod.shipped) {
                 return RowAction::None;
             }
             reorder_content_mod(which, static_cast<size_t>(to));
@@ -1293,13 +1312,16 @@ std::string Panel::delete_prompt() const {
     }
     const content::files::Mod& mod = content_mods_[rows_[static_cast<size_t>(row)].mod].mod;
     if (delete_blocked_) {
-        return mod.name + " adds new classes and is loaded, and a save may hold its classes. Turn it off, restart "
-                          "the game, then it can be deleted.";
+        return mod.shipped ? mod.name + " ships with the game and is loaded this session. Turn it off, restart the "
+                                        "game, then it can be deleted."
+                           : mod.name + " adds new classes and is loaded, and a save may hold its classes. Turn it "
+                                        "off, restart the game, then it can be deleted.";
     }
     const std::string what = mod.kind == content::files::ModKind::Folder || mod.kind == content::files::ModKind::Project
                                  ? "the folder " + mod.folder + " and everything in it"
                                  : "the file " + mod.folder;
-    return mod.name + ": " + what + " will be erased from this computer. This cannot be undone.";
+    return mod.name + ": " + what + " will be erased from this computer. This cannot be undone." +
+           (mod.shipped ? " If an update puts it back, it stays OFF." : "");
 }
 
 int Panel::delete_prompt_row() const {
@@ -1323,6 +1345,31 @@ bool Panel::cancel_prompt() {
     delete_blocked_ = false;
     mod_message_.clear();
     return true;
+}
+
+const mod_options::Option* Panel::mod_option(const Row& row) const {
+    if (row.kind != RowKind::ContentModOption || row.mod >= content_mods_.size()) {
+        return nullptr;
+    }
+    const ContentModView& view = content_mods_[row.mod];
+    if (row.option >= view.mod.options.size() || view.values.count(view.mod.options[row.option].key) == 0) {
+        return nullptr;
+    }
+    return &view.mod.options[row.option];
+}
+
+RowAction Panel::set_mod_option(size_t index, int64_t value) {
+    const mod_options::Option* option = mod_option(rows_[index]);
+    if (option == nullptr || !mod_options::valid_value(*option, value)) {
+        return RowAction::None;
+    }
+    ContentModView& view = content_mods_[rows_[index].mod];
+    if (!mod_options::write_value(view.mod.id, view.mod.options, option->key, value)) {
+        mod_message_ = "Could not save " + option->name + " for " + view.mod.name + ".";
+        return RowAction::SettingChanged;
+    }
+    view.values[option->key] = value;
+    return RowAction::SettingChanged;
 }
 
 bool Panel::content_mod_open(size_t index) const {
@@ -1359,8 +1406,10 @@ Panel::ModCells Panel::content_mod_cells(size_t index) const {
     out.on = view.mod.wanted;
     out.open = open_content_mods_.count(view.mod.folder) != 0;
     out.armed = erase_armed_ == view.mod.folder;
-    out.first = rows_[index].mod == 0;
-    out.last = rows_[index].mod + 1 == content_mods_.size();
+    // The first and last of its group: a mod moves only within it.
+    const size_t which = rows_[index].mod;
+    out.first = which == 0 || content_mods_[which - 1].mod.shipped != view.mod.shipped;
+    out.last = which + 1 == content_mods_.size() || content_mods_[which + 1].mod.shipped != view.mod.shipped;
     out.cell = index == selected_ ? mod_cell_ : -1;
     return out;
 }
@@ -1450,22 +1499,23 @@ std::vector<Panel::Row> Panel::build_rows(Tab tab) const {
                     }
                 }
             }
-            // The player's mods (docs/anotherworld/design-mods.md section 5): one
-            // table of user-content/, in load order.
-            rows.push_back(Row{RowKind::Section, "MODS (user-content/)", 0, 0, -1});
+            // The mods (docs/anotherworld/design-mods.md section 5), in load
+            // order: the shipped group (content/), then the player's
+            // (user-content/).
             if (!content_settings_error_.empty()) {
                 rows.push_back(Row{RowKind::Section,
                                    "YOUR MOD SETTINGS (mod-settings.json) WERE IGNORED: " + content_settings_error_ +
                                        ". EVERY MOD USES ITS DEFAULT. A CHANGE HERE WRITES A NEW FILE.",
                                    0, 0, -1});
             }
-            if (content_mods_.empty()) {
-                rows.push_back(Row{RowKind::Section,
-                                   "NOTHING INSTALLED. PUT A MOD FOLDER, A .JSON PACK OR A .LUA SCRIPT IN user-content/ "
-                                   "IN THE SETTINGS FOLDER.",
-                                   0, 0, -1});
+            size_t player_mods = 0;
+            for (const ContentModView& view : content_mods_) {
+                player_mods += view.mod.shipped ? 0 : 1;
             }
-            else {
+            const bool any_shipped = player_mods < content_mods_.size();
+            if (any_shipped) {
+                rows.push_back(Row{RowKind::Section, "SHIPPED WITH THE GAME (content/): ON OR OFF AT THE NEXT START", 0,
+                                   0, -1});
                 rows.push_back(Row{RowKind::ContentModsHeader, {}, 0, 0, -1});
             }
             int on = 0;
@@ -1474,6 +1524,29 @@ std::vector<Panel::Row> Panel::build_rows(Tab tab) const {
             int pending = 0;
             for (size_t i = 0; i < content_mods_.size(); i++) {
                 const content::files::Mod& mod = content_mods_[i].mod;
+                if (!mod.shipped && (i == 0 || content_mods_[i - 1].mod.shipped)) {
+                    rows.push_back(Row{RowKind::Section, "MODS (user-content/)", 0, 0, -1});
+                    if (!any_shipped) {
+                        rows.push_back(Row{RowKind::ContentModsHeader, {}, 0, 0, -1});
+                    }
+                }
+                if (mod.shipped) {
+                    rows.push_back(Row{RowKind::ContentMod, mod.folder, i, 0, -1});
+                    if (open_content_mods_.count(mod.folder) != 0) {
+                        if (!mod.url.empty()) {
+                            rows.push_back(Row{RowKind::ContentModLink, mod.folder, i, 0, -1});
+                        }
+                        for (const auto& [left, right] : content_mods_[i].info) {
+                            Row row{RowKind::ContentModInfo, left, i, 0, -1};
+                            row.detail = right;
+                            rows.push_back(row);
+                        }
+                        for (size_t o = 0; o < content_mods_[i].values.size() && o < mod.options.size(); o++) {
+                            rows.push_back(Row{RowKind::ContentModOption, mod.folder, i, o, -1});
+                        }
+                    }
+                    continue;
+                }
                 refused += mod.error.empty() ? 0 : 1;
                 on += mod.error.empty() && mod.enabled ? 1 : 0;
                 off += mod.error.empty() && !mod.enabled ? 1 : 0;
@@ -1490,11 +1563,21 @@ std::vector<Panel::Row> Panel::build_rows(Tab tab) const {
                     row.detail = right;
                     rows.push_back(row);
                 }
+                for (size_t o = 0; o < content_mods_[i].values.size() && o < mod.options.size(); o++) {
+                    rows.push_back(Row{RowKind::ContentModOption, mod.folder, i, o, -1});
+                }
             }
-            if (!content_mods_.empty()) {
+            if (player_mods == 0) {
+                rows.push_back(Row{RowKind::Section, "MODS (user-content/)", 0, 0, -1});
+                rows.push_back(Row{RowKind::Section,
+                                   "NOTHING INSTALLED. PUT A MOD FOLDER, A .JSON PACK OR A .LUA SCRIPT IN user-content/ "
+                                   "IN THE SETTINGS FOLDER.",
+                                   0, 0, -1});
+            }
+            else {
                 rows.push_back(Row{RowKind::ContentModsAll, {}, 0, 0, -1});
                 rows.push_back(Row{RowKind::ContentModsNone, {}, 0, 0, -1});
-                std::string counts = std::to_string(content_mods_.size()) + " INSTALLED, " + std::to_string(on) +
+                std::string counts = std::to_string(player_mods) + " INSTALLED, " + std::to_string(on) +
                                      " ON, " + std::to_string(off) + " OFF";
                 if (refused > 0) {
                     counts += ", " + std::to_string(refused) + " REFUSED";
@@ -1578,8 +1661,8 @@ std::vector<Panel::Row> Panel::build_rows(Tab tab) const {
             append_choices(rows, "GAMEPLAY", "WAR DIRECTOR");
             rows.push_back(Row{RowKind::Section, "ENEMY UNITS", 0, 0, -1});
             append_choices(rows, "GAMEPLAY", "ENEMY UNITS");
-            rows.push_back(Row{RowKind::Section, "UNITS AND CLASSES", 0, 0, -1});
-            append_choices(rows, "GAMEPLAY", "UNITS AND CLASSES");
+            // SHARED EXP, CLASS ALIGNMENT and LARGE UNITS are the Another World
+            // pack's rules now (MODS tab; design-another-world-pack.md).
             rows.push_back(Row{RowKind::Section, "WAR DIRECTOR AND LOOT CHANGES APPLY FROM THE NEXT MISSION", 0, 0, -1});
             // The game's own Settings menu (stereo / mono left to the AUDIO tab).
             rows.push_back(Row{RowKind::Section, "GAME SETTINGS", 0, 0, -1});
@@ -1732,7 +1815,7 @@ bool Panel::row_is_steppable(size_t index) const {
     }
     const RowKind kind = rows_[index].kind;
     return is_radio_row(kind) || kind == RowKind::Volume || kind == RowKind::Option || kind == RowKind::GameOption ||
-           kind == RowKind::ProfileLoad || kind == RowKind::ContentMod;
+           kind == RowKind::ProfileLoad || kind == RowKind::ContentMod || kind == RowKind::ContentModOption;
 }
 
 std::string Panel::row_tooltip(size_t index) const {
@@ -1746,6 +1829,17 @@ std::string Panel::row_tooltip(size_t index) const {
     switch (row.kind) {
         case RowKind::GameOption:
             return row.option < game_settings().size() ? game_settings()[row.option].help : "";
+        case RowKind::ContentModOption: {
+            const mod_options::Option* option = mod_option(row);
+            if (option == nullptr) {
+                return {};
+            }
+            std::string text = option->help.empty() ? option->name : option->help;
+            if (option->restart) {
+                text += " Applies at the next start.";
+            }
+            return text;
+        }
         case RowKind::SaveHere: {
             const std::string message = save_profiles::last_message();
             return !message.empty() ? message
@@ -1763,11 +1857,15 @@ std::string Panel::row_tooltip(size_t index) const {
                                                             : " ENTER or A again deletes it; anything else cancels.")
                    : !mod_message_.empty()
                        ? mod_message_
+                   : row.mod < content_mods_.size() && content_mods_[row.mod].mod.shipped
+                       ? "Comes with the game. Left/Right: pick ON, DETAILS, UP, DOWN or DELETE. Enter or A: use it. ON "
+                         "or OFF applies at the next start. Your own mods load after it and win when two change the "
+                         "same record."
                        : "Left/Right: pick ON, DETAILS, UP, DOWN or DELETE. Enter or A: use it. Drag a row with the "
                          "mouse to move it. A later mod wins when two change the same record.";
         case RowKind::ContentModsAll:
         case RowKind::ContentModsNone:
-            return "Sets every mod; mods that add new classes change at the next start.";
+            return "Sets every mod in user-content/; mods that add new classes change at the next start.";
         case RowKind::ContentModLink:
             return !mod_message_.empty() ? mod_message_
                                          : "ENTER, A or a click opens the mod's page in your web browser.";
@@ -1846,6 +1944,17 @@ std::string Panel::left_text(size_t index) const {
     switch (row.kind) {
         case RowKind::GameOption:
             return row.option < game_settings().size() ? game_settings()[row.option].name : "";
+        case RowKind::ContentModOption: {
+            const mod_options::Option* option = mod_option(row);
+            if (option == nullptr) {
+                return {};
+            }
+            const ContentModView& view = content_mods_[row.mod];
+            const int64_t stored = view.values.at(option->key);
+            const int64_t now = mod_options::session_peek(view.mod.id, *option, stored);
+            return "  " + option->name +
+                   (now != stored ? " (NOW " + mod_options::value_text(*option, now) + " UNTIL THE NEXT START)" : "");
+        }
         case RowKind::Section:
             return row.title;
         case RowKind::StartGame:
@@ -1968,6 +2077,14 @@ std::string Panel::right_text_for(const Row& row) const {
         return choice_text(choice);
     }
     switch (row.kind) {
+        case RowKind::ContentModOption: {
+            const mod_options::Option* option = mod_option(row);
+            if (option == nullptr) {
+                return {};
+            }
+            const std::string value = mod_options::value_text(*option, content_mods_[row.mod].values.at(option->key));
+            return option->type == mod_options::Type::Number ? "< " + value + " >" : value;
+        }
         case RowKind::GameOption: {
             if (row.option >= game_settings().size()) {
                 return {};
@@ -2119,6 +2236,29 @@ RowAction Panel::activate(size_t index, int direction) {
         return step_radio_row(row.kind, direction);
     }
     switch (row.kind) {
+        case RowKind::ContentModOption: {
+            // A toggle or a choice steps to the next or previous one; a number
+            // moves one step, and ENTER or A wraps from its maximum to its
+            // minimum.
+            const mod_options::Option* option = mod_option(row);
+            if (option == nullptr) {
+                return RowAction::None;
+            }
+            const int64_t current = content_mods_[row.mod].values.at(option->key);
+            if (option->type == mod_options::Type::Number) {
+                int64_t next = current + (direction < 0 ? -option->step : option->step);
+                if (next > option->max) {
+                    next = direction == 0 ? option->min : option->max;
+                }
+                next = std::max(next, option->min);
+                return next != current ? set_mod_option(index, next) : RowAction::None;
+            }
+            const int64_t count = option->type == mod_options::Type::Toggle
+                                      ? 2
+                                      : static_cast<int64_t>(option->choices.size());
+            const int64_t step = direction == 0 ? 1 : direction;
+            return set_mod_option(index, ((current + step) % count + count) % count);
+        }
         case RowKind::GameOption: {
             if (row.option >= game_settings().size()) {
                 return RowAction::None;
@@ -2328,8 +2468,9 @@ RowAction Panel::activate(size_t index, int direction) {
             const bool on = row.kind == RowKind::ContentModsAll;
             const RowKind kind = row.kind;
             std::vector<content::files::Mod> items;
+            // The player's mods only; a shipped mod has its own switch.
             for (const ContentModView& view : content_mods_) {
-                if (!view.mod.id.empty()) {
+                if (!view.mod.id.empty() && !view.mod.shipped) {
                     items.push_back(view.mod);
                 }
             }
@@ -2399,6 +2540,13 @@ RowAction Panel::choose_option(size_t index, size_t option) {
         rebuild_rows();
         return RowAction::SettingChanged;
     }
+    if (kind == RowKind::ContentModOption) {
+        // A click on one of a toggle's or a choice's labels.
+        const mod_options::Option* declared = mod_option(rows_[index]);
+        return declared != nullptr && declared->type != mod_options::Type::Number
+                   ? set_mod_option(index, static_cast<int64_t>(option))
+                   : RowAction::None;
+    }
     if (kind == RowKind::GameOption) {
         const size_t which = rows_[index].option;
         return which < game_settings().size() && game_setting_set(game_settings()[which], static_cast<int>(option))
@@ -2447,6 +2595,15 @@ Panel::RowOptions Panel::row_options(size_t index) const {
     if (kind == RowKind::ProfileLoad) {
         out.labels = {"LOAD", static_cast<int>(rows_[index].option) == delete_armed_ ? "DELETE?" : "DELETE"};
         out.current = static_cast<int>(rows_[index].option) == delete_armed_ ? 1 : -1;
+        return out;
+    }
+    if (kind == RowKind::ContentModOption) {
+        const mod_options::Option* option = mod_option(rows_[index]);
+        if (option != nullptr && option->type != mod_options::Type::Number) {
+            out.labels = option->type == mod_options::Type::Toggle ? std::vector<std::string>{"OFF", "ON"}
+                                                                   : option->choices;
+            out.current = static_cast<int>(content_mods_[rows_[index].mod].values.at(option->key));
+        }
         return out;
     }
     if (kind == RowKind::GameOption) {

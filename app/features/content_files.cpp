@@ -117,6 +117,14 @@ void read_manifest(const std::filesystem::path& folder, Mod& mod) {
                 mod.required.push_back(required.get<std::string>());
             }
         }
+        if (root.contains("options")) {
+            std::string error;
+            if (!mod_options::parse(root["options"], mod.options, error)) {
+                mod.options.clear();
+                mod.error = "mod.json: " + error;
+                return;
+            }
+        }
     } catch (const std::exception& e) {
         mod.error = std::string("mod.json: ") + e.what();
     }
@@ -252,11 +260,19 @@ bool valid_key(std::string_view key) {
 
 bool erase(const Mod& mod, std::string& error) {
     std::error_code ec;
-    const std::filesystem::path root = std::filesystem::weakly_canonical(host::pref_dir() / "user-content", ec);
+    // A player's item sits directly inside user-content/; a shipped mod is a
+    // mod folder (with its mod.json) directly inside content/.
+    const std::filesystem::path root =
+        std::filesystem::weakly_canonical(mod.shipped ? host::exe_dir() / "content" : host::pref_dir() / "user-content", ec);
     const std::filesystem::path parent = std::filesystem::weakly_canonical(mod.path.parent_path(), ec);
     const std::string name = mod.path.filename().string();
-    if (mod.shipped || ec || mod.path.empty() || parent != root || name.empty() || name == "." || name == "..") {
-        error = "only an item directly inside user-content/ can be deleted";
+    if (ec || mod.path.empty() || parent != root || name.empty() || name == "." || name == "..") {
+        error = mod.shipped ? "only a mod folder directly inside content/ can be deleted"
+                            : "only an item directly inside user-content/ can be deleted";
+        return false;
+    }
+    if (mod.shipped && (mod.kind != ModKind::Folder || !std::filesystem::is_regular_file(mod.path / "mod.json", ec))) {
+        error = "only a mod folder directly inside content/ can be deleted";
         return false;
     }
     // remove_all removes a link itself, never what it points to.

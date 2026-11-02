@@ -188,6 +188,10 @@ struct Slot {
     int chosen_strike = -1;
     int chosen_form = -1;
     int last_form = -1;
+    // The same for the attack list.
+    int attack_strike = -1;
+    int chosen_attack = -1;
+    int last_attack = -1;
 };
 
 // A fighter the port transformed in this battle, for event 58 in the playback.
@@ -275,6 +279,25 @@ bool rule_strike(uint8_t* rdram, int index, uint32_t participant, int strike,
 // The form for the fighter's strike: -1 keeps the class. A list is drawn once
 // per strike, so the picker and the strike agree, and never repeats the
 // fighter's last form when it has another.
+// One of `choices` at random, avoiding `last` when there is another; -1 for
+// none.
+int draw(const std::vector<int>& choices, int last) {
+    if (choices.empty()) {
+        return -1;
+    }
+    std::vector<int> pool;
+    for (const int choice : choices) {
+        if (choice != last) {
+            pool.push_back(choice);
+        }
+    }
+    if (pool.empty()) {
+        pool = choices;
+    }
+    static std::mt19937 random{std::random_device{}()};
+    return pool[std::uniform_int_distribution<size_t>(0, pool.size() - 1)(random)];
+}
+
 int chosen_form(int index, int strike, const ogre::content::BattleFormRule::Strike& want) {
     Slot& s = g_slots[static_cast<size_t>(index)];
     if (want.forms.empty()) {
@@ -283,23 +306,30 @@ int chosen_form(int index, int strike, const ogre::content::BattleFormRule::Stri
     if (s.chosen_strike == strike) {
         return s.chosen_form;
     }
-    std::vector<int> pool;
-    for (const int form : want.forms) {
-        if (form != s.last_form) {
-            pool.push_back(form);
-        }
-    }
-    if (pool.empty()) {
-        pool = want.forms;
-    }
-    static std::mt19937 random{std::random_device{}()};
-    const int form = pool[std::uniform_int_distribution<size_t>(0, pool.size() - 1)(random)];
+    const int form = draw(want.forms, s.last_form);
     s.chosen_strike = strike;
     s.chosen_form = form;
     if (form >= 0) {
         s.last_form = form;
     }
     return form;
+}
+
+// The attack for the fighter's strike: -1 when the rule names none. A list is
+// drawn once per strike, as chosen_form does.
+int chosen_attack(int index, int strike, const ogre::content::BattleFormRule::Strike& want) {
+    Slot& s = g_slots[static_cast<size_t>(index)];
+    if (want.attacks.empty()) {
+        return -1;
+    }
+    if (s.attack_strike == strike) {
+        return s.chosen_attack;
+    }
+    const int attack = draw(want.attacks, s.last_attack);
+    s.attack_strike = strike;
+    s.chosen_attack = attack;
+    s.last_attack = attack;
+    return attack;
 }
 
 // The form's breath attack: the first breath (attack kind 5) in its rows,
@@ -493,7 +523,7 @@ uint32_t attack(uint8_t* rdram, recomp_context* ctx, uint32_t participant, uint3
         return attack;
     }
     const int form = chosen_form(index, strike, want);
-    int result = want.breath ? breath_attack(form) : want.attack;
+    int result = want.breath ? breath_attack(form) : chosen_attack(index, strike, want);
     // A picker runs before the strike's form is set, so a strike without an
     // "attack" takes the form's attack for the fighter's row here.
     if (result < 0 && picker && form >= 0 && ctx != nullptr && content::loaded()) {

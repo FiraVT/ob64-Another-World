@@ -1,7 +1,7 @@
 # Class rebalance and new promotion trees
 
 Status: revision 3. Phase A (data) is implemented as the content pack
-`app/content/class-rebalance.json` (2026-10-31, `design-content-database.md`);
+`app/content/another-world/class-rebalance.json` (2026-10-31, `design-content-database.md`);
 the rules that are not data stay in `app/features/class_rebalance.cpp`. Phase B (the Promote tab trees in
 `app/src/honors.cpp`) was removed with Honors on 2026-10-29: class changes are
 vanilla apart from the alignment requirement, which is dropped

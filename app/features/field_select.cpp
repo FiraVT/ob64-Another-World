@@ -581,9 +581,10 @@ void run_orders(uint8_t* rdram, recomp_context* ctx) {
                 moved++;
                 continue;
             }
-            // A move, stop, pursue or return takes the unit from the auto
-            // commander until its card's AI button hands it back.
-            auto_commander::player_ordered(slot);
+            // A move, pursue or return takes the unit from the auto commander
+            // until the order finishes; a stop until its card's AI button
+            // hands it back.
+            auto_commander::player_ordered(slot, order.hold);
             {
                 // Any new order (Stop too) ends this unit's chase; a pursue starts
                 // a new one.

@@ -1,0 +1,57 @@
+{
+  "_comment": "The Another World mod pack: the rule changes that make OB64: Another World play differently from the original game. Its options are set under its row in the MODS tab. docs/anotherworld/design-another-world-pack.md describes each part.",
+  "id": "another-world",
+  "name": "Another World",
+  "version": "1.0",
+  "author": "OB64: Another World",
+  "url": "https://github.com/FiraVT/ob64-Another-World",
+  "description": "The class rebalance, Faerie heals and the Centurion command, shared battle EXP, class changes without alignment limits, and large units in one square.",
+  "priority": -100,
+  "requires": [],
+  "enabled": true,
+  "options": [
+    {
+      "key": "shared_exp",
+      "name": "SHARED EXP",
+      "type": "toggle",
+      "default": true,
+      "help": "A battle's EXP is pooled and shared across the unit, lower levels getting more. Every member keeps the levels it gained."
+    },
+    {
+      "key": "faerie_heals",
+      "name": "FAERIE HEALS",
+      "type": "toggle",
+      "default": true,
+      "help": "When an ally is below 70% HP, a Faerie's Throw a Kiss becomes Healing."
+    },
+    {
+      "key": "centurion_command",
+      "name": "CENTURION COMMAND",
+      "type": "toggle",
+      "default": true,
+      "help": "Each Centurion that can still fight gives every Soldier on its side one more attack."
+    },
+    {
+      "key": "class_alignment",
+      "name": "CLASS ALIGNMENT",
+      "type": "choice",
+      "choices": [
+        "IGNORED",
+        "VANILLA"
+      ],
+      "default": "IGNORED",
+      "help": "IGNORED: class changes do not check alignment. VANILLA: the game's alignment limits."
+    },
+    {
+      "key": "large_units",
+      "name": "LARGE UNITS",
+      "type": "choice",
+      "choices": [
+        "ONE SQUARE",
+        "VANILLA"
+      ],
+      "default": "ONE SQUARE",
+      "help": "ONE SQUARE: a large class takes one place in a unit, for your units and the enemy's. VANILLA: two places."
+    }
+  ]
+}

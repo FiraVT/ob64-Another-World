@@ -65,6 +65,7 @@ constexpr uint32_t CHECK_VALUE = 0x80190388u;
 constexpr std::array<TableInfo, kTableCount> TABLES = {{
     {"classes", addr::kClasses, addr::kClassSize, addr::kClassCount, 0x5DB34u, true, 256},
     {"attacks", addr::kAttacks, addr::kAttackSize, addr::kAttackCount, 0x6099Cu, true, addr::kAttackCount},
+    {"spells", addr::kSpellMaps, addr::kSpellMapSize, addr::kSpellMapCount, 0x6138Cu, false, addr::kSpellMapCount},
     {"items", addr::kItems, addr::kItemSize, addr::kItemCount, 0x6232Cu, true, addr::kItemCount},
     {"consumables", addr::kConsumables, addr::kConsumableSize, addr::kConsumableCount, 0x645ECu, true,
      addr::kConsumableCount},
@@ -142,6 +143,19 @@ constexpr Field ATTACK_FIELDS[] = {
     {"kind", 0x04, 1, false},
     {"element", 0x05, 1, false},
     {"formula", 0x09, 1, false},
+};
+
+// A spell map row: the attack each element turns the row's generic attack
+// into (game_addresses.hpp kSpellMaps). The element names are the item
+// resistances' (res_wind ..).
+constexpr Field SPELL_FIELDS[] = {
+    {"physical", 0x00, 1, false},
+    {"wind", 0x01, 1, false},
+    {"fire", 0x02, 1, false},
+    {"earth", 0x03, 1, false},
+    {"water", 0x04, 1, false},
+    {"virtue", 0x05, 1, false},
+    {"bane", 0x06, 1, false},
 };
 
 constexpr Field ITEM_FIELDS[] = {
@@ -223,9 +237,12 @@ std::string g_fingerprint;  // of the content folders at the last read
 std::vector<files::Mod> g_mods;
 std::string g_settings_error;  // why mod-settings.json was ignored at the last read
 int g_generation = 0;
-// Mods that add new classes, and every mod's load state at the first read: a
-// class mod keeps that state until the next start (held_mods).
-std::set<std::string> g_class_mods;
+// The held mods, and every mod's load state at the first read: a held mod
+// keeps that state until the next start (held_mods). A mod is held when it
+// adds new classes (their ids go into saves) or ships with the game in
+// content/ (the Another World pack's rules change saved state,
+// design-another-world-pack.md section 3.3).
+std::set<std::string> g_held;
 std::map<std::string, int> g_class_counts;
 std::map<std::string, bool> g_start_loaded;
 bool g_start_known = false;
@@ -528,11 +545,11 @@ void write_dump() {
     }
 }
 
-// The class mods held at their state from the first read (held_mods). A class
-// mod installed after that is held off.
+// The held mods at their state from the first read (held_mods). A class mod
+// installed after that is held off.
 std::map<std::string, bool> held_map() {
     std::map<std::string, bool> held;
-    for (const std::string& id : g_class_mods) {
+    for (const std::string& id : g_held) {
         const auto found = g_start_loaded.find(id);
         held[id] = found != g_start_loaded.end() && found->second;
     }
@@ -620,12 +637,17 @@ void read_files(bool again = false) {
         }
     }
     g_class_counts = classes;
-    std::set<std::string> class_mods;
+    std::set<std::string> held;
     for (const auto& [id, count] : classes) {
-        class_mods.insert(id);
+        held.insert(id);
     }
-    if (class_mods != g_class_mods) {
-        g_class_mods = std::move(class_mods);
+    for (const files::Mod& mod : g_mods) {
+        if (mod.shipped && !mod.id.empty()) {
+            held.insert(mod.id);
+        }
+    }
+    if (held != g_held) {
+        g_held = std::move(held);
         if (!again) {
             read_files(true);
             return;
@@ -666,6 +688,8 @@ std::span<const Field> fields(Table table) {
             return CLASS_FIELDS;
         case Table::Attacks:
             return ATTACK_FIELDS;
+        case Table::Spells:
+            return SPELL_FIELDS;
         case Table::Items:
             return ITEM_FIELDS;
         case Table::Consumables:
@@ -721,6 +745,10 @@ bool Pack::set_record(Table table, uint16_t id, std::span<const uint8_t> bytes) 
     return true;
 }
 
+bool spell_target(int64_t attack) {
+    return attack >= 1 && attack < info(Table::Attacks).count && !(attack >= 45 && attack <= 54) && attack != 145;
+}
+
 bool Pack::set_field(Table table, uint16_t id, std::string_view name, int64_t value) {
     const Field* f = field(table, name);
     if (f == nullptr) {
@@ -730,6 +758,9 @@ bool Pack::set_field(Table table, uint16_t id, std::string_view name, int64_t va
     const int64_t low = f->is_signed ? -(int64_t{1} << (bits - 1)) : 0;
     const int64_t high = f->is_signed ? (int64_t{1} << (bits - 1)) - 1 : (int64_t{1} << bits) - 1;
     if (value < low || value > high) {
+        return false;
+    }
+    if (table == Table::Spells && !spell_target(value)) {
         return false;
     }
     if (f->bits > 0) {
@@ -854,6 +885,13 @@ std::string record_name(Table table, uint16_t id) {
         return {};
     }
     return decode_name(data(table).current_names[id]);
+}
+
+std::vector<uint8_t> original_name(Table table, uint16_t id) {
+    if (!g_loaded || id >= info(table).capacity) {
+        return {};
+    }
+    return data(table).names[id];
 }
 
 std::string decode_name(std::span<const uint8_t> bytes) {
@@ -1095,7 +1133,7 @@ std::vector<BattleFormRule> battle_form_rules() {
             BattleFormRule rule{static_cast<uint16_t>(cls), form.attacks, form.repeat, {}};
             bool complete = true;
             for (const BattleFormStrike& strike : form.strikes) {
-                BattleFormRule::Strike out{{}, strike.attack, strike.breath};
+                BattleFormRule::Strike out{{}, strike.attacks, strike.breath};
                 for (const int id : strike.forms) {
                     out.forms.push_back(id);
                 }

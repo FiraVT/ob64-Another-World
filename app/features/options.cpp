@@ -33,14 +33,10 @@ constexpr ChoiceInfo kChoices[kChoiceCount] = {
     {"pixel_filter", {"SMOOTH", "SHARP"}, 2, 0, "PIXEL FILTER",
      "SMOOTH scales the picture with filtering; SHARP keeps hard pixel edges. Applies at once."},
     {"turbo_a", {"OFF", "ON"}, 2, 0, "TURBO A", ""},
-    {"large_units", {"ONE SQUARE", "VANILLA"}, 2, 0, "LARGE UNITS", ""},
     {"war_director", {"OFF", "ON"}, 2, 1, "WAR DIRECTOR",
      "The enemy builds and sends units during a mission, with telegraphed attacks and spoils."},
     {"loot_upgrades", {"OFF", "ON"}, 2, 1, "LOOT UPGRADES", "Battle drops are upgraded by the mission's band."},
     {"training_catch_up", {"OFF", "ON"}, 2, 1, "TRAINING CATCH-UP", ""},
-    {"shared_exp", {"OFF", "ON"}, 2, 1, "SHARED EXP", "Battle experience is shared across the whole unit."},
-    {"class_alignment", {"IGNORED", "VANILLA"}, 2, 0, "CLASS ALIGNMENT",
-     "IGNORED: class changes do not check alignment. VANILLA: the game's alignment limits."},
     {"pause_unfocused", {"OFF", "ON"}, 2, 0, "PAUSE WHEN UNFOCUSED", ""},
     {"skip_intro", {"OFF", "ON"}, 2, 0, "SKIP INTRO", "Boot straight to the title menu."},
     {"button_prompts", {"AUTO", "XBOX", "PLAYSTATION", "NINTENDO"}, 4, 0, "BUTTON PROMPTS",
@@ -133,9 +129,6 @@ constexpr Placement kLayout[] = {
     {"GAMEPLAY", "ENEMY UNITS", Choice::EnemyWeapons},
     {"GAMEPLAY", "ENEMY UNITS", Choice::EnemyFormations},
     {"GAMEPLAY", "ENEMY UNITS", Choice::EnemyRanks},
-    {"GAMEPLAY", "UNITS AND CLASSES", Choice::SharedExp},
-    {"GAMEPLAY", "UNITS AND CLASSES", Choice::ClassAlignment},
-    {"GAMEPLAY", "UNITS AND CLASSES", Choice::LargeUnits},
 };
 
 int g_choices[kChoiceCount] = {};

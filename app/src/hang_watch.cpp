@@ -28,6 +28,7 @@
 #include <ultramodern/ultramodern.hpp>
 
 #include "crash_log.hpp"
+#include "overlay.hpp"
 
 namespace ogre {
 namespace {
@@ -104,7 +105,11 @@ void hang_watch_tick(SDL_Window* game_window) {
         return;
     }
     const Uint32 flags = game_window != nullptr ? SDL_GetWindowFlags(game_window) : 0;
-    if ((flags & (SDL_WINDOW_MINIMIZED | SDL_WINDOW_HIDDEN)) != 0 || gap > kMaxCountedGapMs) {
+    // A minimized window, and a game paused on purpose (the Esc menu, PAUSE ON
+    // SELECT), produce no frames without being stuck (2026-11-01: a 5 s visit
+    // to the MODS tab at the title wrote an error.log).
+    if ((flags & (SDL_WINDOW_MINIMIZED | SDL_WINDOW_HIDDEN)) != 0 || gap > kMaxCountedGapMs || game_paused()) {
+        g_watch.still_ms = game_paused() ? 0 : g_watch.still_ms;
         return;
     }
     g_watch.still_ms += gap;
