@@ -276,3 +276,33 @@ index c0620f3..1e4e18a 100644
              ultramodern::thread_queue_insert(PASS_RDRAM GET_MEMBER(OSMesgQueue, mq_, blocked_on_recv), ultramodern::this_thread());
              ultramodern::run_next_thread_and_wait(PASS_RDRAM1);
          }
+diff --git a/librecomp/src/pi.cpp b/librecomp/src/pi.cpp
+--- a/librecomp/src/pi.cpp
++++ b/librecomp/src/pi.cpp
+@@ -242,6 +242,26 @@
+     assert((physical_addr & 0x1) == 0 && "Only PI DMA from aligned ROM addresses is currently supported");
+     assert((ram_address & 0x7) == 0 && "Only PI DMA to aligned RDRAM addresses is currently supported");
+ 
++    // A request that runs past the end of the ROM read host memory beyond the
++    // ROM image and faulted with no trace of the request (a 0.3.0 tester's
++    // crash, 2026-11-03: a read 0x1579A7000 bytes past the RDRAM base). Stop
++    // with the request in the message, which the app's message_box callback
++    // writes into error.log. The cart offset comes from game state, so the
++    // request is reported as it is and no bytes are invented for it.
++    const uint64_t rom_offset = (uint64_t)physical_addr - recomp::rom_base;
++    if (physical_addr < recomp::rom_base || rom_offset + num_bytes > rom.size()) {
++        char message[256];
++        snprintf(message, sizeof(message),
++                 "The game asked for ROM bytes past the end of the ROM.\n"
++                 "rom offset 0x%08llX, size 0x%llX, ROM size 0x%llX, RDRAM destination 0x%08X",
++                 (unsigned long long)rom_offset, (unsigned long long)num_bytes,
++                 (unsigned long long)rom.size(), (uint32_t)ram_address);
++        fprintf(stderr, "[pi] %s\n", message);
++        fflush(stderr);
++        ultramodern::error_handling::message_box(message);
++        ULTRAMODERN_QUICK_EXIT();
++    }
++
+     // Streamed-overlay bank swap (Phase 4): the game loads overlays into RAM
+     // that other overlays reuse, so the function map must follow the DMA. The
+     // hook runs before the copy — registering a bank never touches RDRAM.
